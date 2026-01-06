@@ -75,7 +75,6 @@ else:
         if u_rol in ['Director', 'Administradora']: opcs.insert(4, "👥 Monitor de Personal")
         mod = st.sidebar.selectbox("Módulo:", opcs)
 
-        # --- MONITOR DE PERSONAL ---
         if mod == "👥 Monitor de Personal":
             st.title("👥 Monitor de Estatus del Personal")
             conn = get_db_connection()
@@ -85,39 +84,30 @@ else:
             with c2: st.info("⚪ Desconectados"); st.table(df_u[df_u['online']=='OFFLINE'][['nombre','depto']])
             conn.close()
 
-        # --- DASHBOARD (GRÁFICAS CORREGIDAS) ---
         elif mod == "📊 Dashboard":
             st.title("📊 Control de Gestión Operativa")
             conn = get_db_connection()
             query_dash = "SELECT status, entregado_a, departamento FROM correspondencia"
             if u_rol not in ['Director', 'Administradora']:
                 query_dash += f" WHERE departamento = '{u_depto}'"
-            
             df = pd.read_sql_query(query_dash, conn)
             conn.close()
-
             if not df.empty:
                 col1, col2 = st.columns(2)
                 with col1:
-                    fig_pie = px.pie(df, names='status', title="Estatus de los Trámites", 
-                                     hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
+                    fig_pie = px.pie(df, names='status', title="Estatus de los Trámites", hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
                     st.plotly_chart(fig_pie, use_container_width=True)
-                
                 with col2:
-                    # Contar trámites por persona
                     res_ent = df['entregado_a'].value_counts().reset_index()
                     res_ent.columns = ['Personal', 'Cantidad']
-                    fig_bar = px.bar(res_ent, x='Personal', y='Cantidad', title="Carga de Trabajo por Personal",
-                                     color='Cantidad', color_continuous_scale='Viridis')
+                    fig_bar = px.bar(res_ent, x='Personal', y='Cantidad', title="Carga de Trabajo por Personal", color='Cantidad', color_continuous_scale='Viridis')
                     st.plotly_chart(fig_bar, use_container_width=True)
-                
                 st.subheader("Trámites por Departamento")
                 fig_dept = px.histogram(df, x='departamento', color='status', barmode='group', title="Distribución por Áreas")
                 st.plotly_chart(fig_dept, use_container_width=True)
             else:
                 st.info("Aún no hay datos registrados para generar gráficas.")
 
-        # --- ALERTAS RÁPIDAS ---
         elif mod == "🚨 Alertas Rápidas":
             st.title("🚨 Centro de Notificaciones")
             conn = get_db_connection()
@@ -126,24 +116,12 @@ else:
             st.dataframe(pd.read_sql_query(q_p, conn), use_container_width=True)
             conn.close()
 
-        # --- NUEVO FOLIO (IA) ---
+        # MODIFICADO: FORMULARIO ARRIBA / IA ABAJO
         elif mod == "📥 Nuevo Folio (IA)":
             st.title("📥 Registro de Documentos")
             if 'ia_data' not in st.session_state:
                 st.session_state.ia_data = {"folio":"", "cuenta":"", "sicamdtr":"", "ext":"", "dep":"", "asunto":""}
             
-            foto_cap = st.camera_input("Capturar Oficio")
-            c_btn1, c_btn2 = st.columns(2)
-            with c_btn1:
-                if foto_cap and st.button("🤖 IA: Analizar"):
-                    img = Image.open(foto_cap)
-                    response = model.generate_content(["Analiza: Folio, Cuenta, SICAMDTR, Externo, Dependencia, Asunto. Formato F:x|C:x|S:x|E:x|D:x|A:x", img])
-                    res = response.text.split("|")
-                    st.session_state.ia_data = {"folio": res[0].split(":")[1], "cuenta": res[1].split(":")[1], "sicamdtr": res[2].split(":")[1], "ext": res[3].split(":")[1], "dep": res[4].split(":")[1], "asunto": res[5].split(":")[1]}
-            with c_btn2:
-                if st.button("🧹 Limpiar Formulario"):
-                    st.session_state.ia_data = {"folio":"", "cuenta":"", "sicamdtr":"", "ext":"", "dep":"", "asunto":""}; st.rerun()
-
             with st.form("nuevo_registro"):
                 c1, c2 = st.columns(2)
                 with c1:
@@ -156,18 +134,33 @@ else:
                     ni12=st.selectbox("Estatus", ["PENDIENTE", "EN PROCESO"]); ni13=st.text_area("Seguimiento")
                     ni14=st.text_input("Ubicación Física"); ni15=st.text_input("Firma"); ni16=st.text_input("Capturista", value=u_nom, disabled=True)
                 
-                if st.form_submit_button("💾 Guardar"):
-                    img_bytes = foto_cap.getvalue() if foto_cap else None
-                    conn = get_db_connection()
-                    conn.execute("INSERT INTO correspondencia VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                                 (ni1, ni2, ni3, ni4, ni5, ni6, ni7, ni8, ni9, ni10, ni11, ni12, ni13, ni14, ni15, ni16, img_bytes))
-                    conn.commit(); conn.close(); st.success("Guardado"); st.rerun()
+                f_save = st.form_submit_button("💾 Guardar")
 
-        # --- REGISTRO MAESTRO (DIVIDIDO) ---
+            st.divider()
+            st.subheader("🤖 Asistente IA (Opcional)")
+            foto_cap = st.camera_input("Capturar Oficio")
+            cb1, cb2 = st.columns(2)
+            with cb1:
+                if foto_cap and st.button("🤖 IA: Analizar"):
+                    img = Image.open(foto_cap)
+                    response = model.generate_content(["Analiza: Folio, Cuenta, SICAMDTR, Externo, Dependencia, Asunto. Formato F:x|C:x|S:x|E:x|D:x|A:x", img])
+                    res = response.text.split("|")
+                    st.session_state.ia_data = {"folio": res[0].split(":")[1], "cuenta": res[1].split(":")[1], "sicamdtr": res[2].split(":")[1], "ext": res[3].split(":")[1], "dep": res[4].split(":")[1], "asunto": res[5].split(":")[1]}
+                    st.rerun()
+            with cb2:
+                if st.button("🧹 Limpiar Formulario"):
+                    st.session_state.ia_data = {"folio":"", "cuenta":"", "sicamdtr":"", "ext":"", "dep":"", "asunto":""}; st.rerun()
+
+            if f_save:
+                img_bytes = foto_cap.getvalue() if foto_cap else None
+                conn = get_db_connection()
+                conn.execute("INSERT INTO correspondencia VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (ni1, ni2, ni3, ni4, ni5, ni6, ni7, ni8, ni9, ni10, ni11, ni12, ni13, ni14, ni15, ni16, img_bytes))
+                conn.commit(); conn.close(); st.success("Guardado"); st.rerun()
+
+        # MODIFICADO: LÓGICA DE SUB-FOLIOS EN TURNAR
         elif mod == "📑 Registro Maestro":
             st.title("📑 Gestión de Folios")
             conn = get_db_connection()
-            
             if u_rol == 'Administradora':
                 with st.expander("🗑️ ZONA DE ELIMINACIÓN (ADMIN)"):
                     f_del = st.text_input("Ingrese Folio exacto para borrar:")
@@ -175,25 +168,28 @@ else:
                         if f_del:
                             conn.execute("DELETE FROM correspondencia WHERE folio_dir=?", (f_del,))
                             conn.commit(); st.warning("Eliminado."); st.rerun()
-
             tab_turnar, tab_editar = st.tabs(["🔄 Turnar Folio", "📝 Editar Datos (16 campos)"])
             df_folios = pd.read_sql_query("SELECT folio_dir FROM correspondencia", conn)
             lista_f = [""] + df_folios['folio_dir'].tolist()
-
             with tab_turnar:
                 sel_t = st.selectbox("Folio para Turnar:", lista_f, key="s_t")
                 if sel_t:
-                    d_t = conn.execute("SELECT departamento, entregado_a, status FROM correspondencia WHERE folio_dir=?", (sel_t,)).fetchone()
+                    d_t = conn.execute("SELECT * FROM correspondencia WHERE folio_dir=?", (sel_t,)).fetchone()
                     ct1, ct2 = st.columns(2)
                     with ct1:
-                        nt_depto = st.selectbox("Nuevo Departamento:", AREAS, index=AREAS.index(d_t['departamento']))
-                        nt_status = st.selectbox("Nuevo Estatus:", ["PENDIENTE", "EN PROCESO", "FINALIZADO"])
+                        nt_depto = st.selectbox("Nuevo Departamento:", AREAS)
+                        nt_status = st.selectbox("Nuevo Estatus:", ["PENDIENTE", "EN PROCESO"])
                     with ct2:
                         nt_pers = st.text_input("Asignar a:", value=d_t['entregado_a'])
                     if st.button("Confirmar Turnado"):
-                        conn.execute("UPDATE correspondencia SET departamento=?, status=?, entregado_a=? WHERE folio_dir=?", (nt_depto, nt_status, nt_pers, sel_t))
-                        conn.commit(); st.success("Folio turnado"); st.rerun()
-
+                        base = sel_t.split("-")[0]
+                        existentes = conn.execute("SELECT COUNT(*) FROM correspondencia WHERE folio_dir LIKE ?", (f"{base}-%",)).fetchone()[0]
+                        letras = ["A", "B", "C", "D", "E", "F", "G", "H"]
+                        nueva_letra = letras[existentes] if existentes < len(letras) else "Z"
+                        nuevo_folio = f"{base}-{nueva_letra}"
+                        conn.execute("INSERT INTO correspondencia VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                                     (nuevo_folio, d_t['cuenta'], d_t['sicamdtr'], d_t['folio_ext'], d_t['dependencia'], d_t['asunto'], d_t['nombre_ubica'], d_t['fecha_ingreso'], nt_depto, nt_pers, d_t['recibe_investiga'], nt_status, d_t['seguimiento'], d_t['ubicacion_fisica'], d_t['quien_firma'], u_nom, d_t['foto']))
+                        conn.commit(); st.success(f"Turnado como: {nuevo_folio}"); st.rerun()
             with tab_editar:
                 sel_e = st.selectbox("Folio para Editar:", lista_f, key="s_e")
                 if sel_e:
@@ -201,21 +197,12 @@ else:
                     with st.form("edit_total"):
                         ce1, ce2 = st.columns(2)
                         with ce1:
-                            e2=st.text_input("Cuenta", de['cuenta']); e3=st.text_input("SICAMDTR", de['sicamdtr'])
-                            e4=st.text_input("Folio Ext", de['folio_ext']); e5=st.text_input("Dependencia", de['dependencia'])
-                            e6=st.text_area("Asunto", de['asunto']); e7=st.text_input("Ubicación", de['nombre_ubica'])
-                            e8=st.text_input("Fecha", de['fecha_ingreso'])
+                            e2=st.text_input("Cuenta", de['cuenta']); e3=st.text_input("SICAMDTR", de['sicamdtr']); e4=st.text_input("Folio Ext", de['folio_ext']); e5=st.text_input("Dependencia", de['dependencia']); e6=st.text_area("Asunto", de['asunto']); e7=st.text_input("Ubicación", de['nombre_ubica']); e8=st.text_input("Fecha", de['fecha_ingreso'])
                         with ce2:
-                            e9=st.selectbox("Área", AREAS, index=AREAS.index(de['departamento']))
-                            e10=st.text_input("Asignado", de['entregado_a']); e11=st.text_input("Recibe", de['recibe_investiga'])
-                            e12=st.selectbox("Estatus", ["PENDIENTE", "EN PROCESO", "FINALIZADO"])
-                            e13=st.text_area("Seguimiento", de['seguimiento']); e14=st.text_input("Ubicación F.", de['ubicacion_fisica'])
-                            e15=st.text_input("Firma", de['quien_firma'])
+                            e9=st.selectbox("Área", AREAS, index=AREAS.index(de['departamento'])); e10=st.text_input("Asignado", de['entregado_a']); e11=st.text_input("Recibe", de['recibe_investiga']); e12=st.selectbox("Estatus", ["PENDIENTE", "EN PROCESO", "FINALIZADO"]); e13=st.text_area("Seguimiento", de['seguimiento']); e14=st.text_input("Ubicación F.", de['ubicacion_fisica']); e15=st.text_input("Firma", de['quien_firma'])
                         if st.form_submit_button("Guardar Cambios"):
                             conn.execute("UPDATE correspondencia SET cuenta=?, sicamdtr=?, folio_ext=?, dependencia=?, asunto=?, nombre_ubica=?, fecha_ingreso=?, departamento=?, entregado_a=?, recibe_investiga=?, status=?, seguimiento=?, ubicacion_fisica=?, quien_firma=? WHERE folio_dir=?", (e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15, sel_e))
                             conn.commit(); st.success("Datos actualizados"); st.rerun()
-
-            # TABLAS DE VISUALIZACIÓN
             if u_rol in ['Director', 'Administradora']:
                 v_tabs = st.tabs(["🌎 Global"] + AREAS)
                 for i, area in enumerate(["Global"] + AREAS):
@@ -226,7 +213,6 @@ else:
                 st.dataframe(pd.read_sql_query("SELECT * FROM correspondencia WHERE departamento = ?", conn, params=(u_depto,)).drop(columns=['foto'], errors='ignore'), use_container_width=True)
             conn.close()
 
-        # --- MENSAJERÍA ---
         elif mod == "✉️ Mensajería":
             st.title("✉️ Buzón")
             conn = get_db_connection()
@@ -243,7 +229,6 @@ else:
                     with st.chat_message("user"): st.write(f"**De:** {m['remitente']} ({m['fecha']})"); st.write(m['texto'])
             conn.close()
 
-        # --- MI PERFIL ---
         elif mod == "👤 Mi Perfil":
             st.title("👤 Configuración")
             st.write(f"Usuario: **{u_nom}** | Rol: **{u_rol}**")
