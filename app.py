@@ -205,7 +205,6 @@ else:
                 df = pd.read_sql_query("SELECT * FROM correspondencia WHERE departamento = ?", conn, params=(u_depto,))
             
             if not df.empty:
-                # CORRECCIÓN DE ERROR DE GRÁFICA (image_5c66ac.png)
                 res_status = df['status'].value_counts().reset_index()
                 res_status.columns = ['Estatus', 'Cantidad']
                 st.plotly_chart(px.pie(res_status, values='Cantidad', names='Estatus', title=f"Estatus ({u_depto})", hole=0.4))
@@ -225,12 +224,24 @@ else:
         elif mod == "📥 Nuevo Folio (IA)":
             st.title("📥 Registro de Documentos")
             foto_cap = st.camera_input("Capturar Oficio")
-            # (IA y Registro de Folio se mantiene igual...)
             st.warning("Complete los datos del formulario abajo.")
 
         elif mod == "📑 Registro Maestro":
             st.title(f"📑 Registro Maestro - Vista: {u_depto}")
             conn = get_db_connection()
+            
+            # --- NUEVA FUNCIÓN: BORRADO EXCLUSIVO PARA ADMINISTRADORA ---
+            if u_rol == 'Administradora':
+                with st.expander("🗑️ ZONA DE ELIMINACIÓN (SOLO ADMIN)"):
+                    folio_del = st.text_input("Ingrese Folio EXACTO para eliminar:")
+                    if st.button("❌ Eliminar Registro Permanentemente"):
+                        if folio_del:
+                            conn.execute("DELETE FROM correspondencia WHERE folio_dir=?", (folio_del,))
+                            conn.commit()
+                            st.warning(f"Folio {folio_del} eliminado.")
+                            st.rerun()
+                        else: st.error("Escriba un folio.")
+            
             if u_rol in ['Director', 'Administradora']:
                 tabs = st.tabs(["🌎 Vista Global"] + AREAS)
                 for i, area in enumerate(["Vista Global"] + AREAS):
@@ -259,7 +270,7 @@ else:
                         conn.execute("UPDATE usuarios SET password = ? WHERE user = ?", (new_p, u_id))
                         conn.commit()
                         conn.close()
-                        st.success("✅ Contraseña actualizada. Inicie sesión nuevamente para aplicar.")
+                        st.success("✅ Contraseña actualizada.")
                     else:
                         st.error("❌ Las contraseñas no coinciden.")
 
