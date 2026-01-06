@@ -31,7 +31,7 @@ def init_db():
     conn.close()
 
 init_db()
-st.set_page_config(page_title="Oficial 2026", layout="wide")
+st.set_page_config(page_title="Oficialía Elite V22", layout="wide")
 
 if 'auth' not in st.session_state: st.session_state.auth = False
 AREAS = ["DIRECCIÓN", "TRANSMISIONES", "COORDINACIÓN", "CERTIFICACIONES", "VALUACIÓN", "CARTOGRAFÍA", "TRÁMITE Y REGISTRO"]
