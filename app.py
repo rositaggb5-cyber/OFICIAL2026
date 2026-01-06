@@ -31,14 +31,7 @@ def init_db():
     conn.close()
 
 init_db()
-st.set_page_config(page_title="Oficial 2026", layout="wide")
-
-# Estilos visuales solicitados
-st.markdown("""<style>
-    [data-testid="stSidebar"] {background-color: #f0f2f6; border-right: 2px solid #d1d5db;}
-    .stButton>button {border-radius: 8px;}
-    .stExpander {border: 1px solid #e5e7eb; border-radius: 10px; margin-bottom: 10px; background-color: #ffffff;}
-</style>""", unsafe_allow_html=True)
+st.set_page_config(page_title="Oficialía Elite V22", layout="wide")
 
 if 'auth' not in st.session_state: st.session_state.auth = False
 AREAS = ["DIRECCIÓN", "TRANSMISIONES", "COORDINACIÓN", "CERTIFICACIONES", "VALUACIÓN", "CARTOGRAFÍA", "TRÁMITE Y REGISTRO"]
@@ -92,147 +85,177 @@ else:
             with c2: st.info("⚪ Desconectados"); st.table(df_u[df_u['online']=='OFFLINE'][['nombre','depto']])
             conn.close()
 
-        # --- DASHBOARD ---
+        # --- DASHBOARD (GRÁFICAS CORREGIDAS) ---
         elif mod == "📊 Dashboard":
-            st.title("📊 Control de Gestión")
+            st.title("📊 Control de Gestión Operativa")
             conn = get_db_connection()
-            df = pd.read_sql_query("SELECT * FROM correspondencia" if u_rol in ['Director', 'Administradora'] else "SELECT * FROM correspondencia WHERE departamento = ?", conn, params=(u_depto,) if u_rol not in ['Director', 'Administradora'] else None)
-            if not df.empty:
-                col1, col2 = st.columns(2)
-                with col1: st.plotly_chart(px.pie(df, names='status', title="Estatus General", hole=0.4, color_discrete_sequence=px.colors.qualitative.Safe))
-                with col2: 
-                    res_ent = df['entregado_a'].value_counts().reset_index()
-                    res_ent.columns = ['empleado', 'count']
-                    st.plotly_chart(px.bar(res_ent, x='empleado', y='count', title="Productividad por Personal", color='count'))
-            else: st.info("Sin datos para mostrar.")
+            query_dash = "SELECT status, entregado_a, departamento FROM correspondencia"
+            if u_rol not in ['Director', 'Administradora']:
+                query_dash += f" WHERE departamento = '{u_depto}'"
+            
+            df = pd.read_sql_query(query_dash, conn)
             conn.close()
 
-        # --- ALERTAS RÁPIDAS (RESTAURADO) ---
+            if not df.empty:
+                col1, col2 = st.columns(2)
+                with col1:
+                    fig_pie = px.pie(df, names='status', title="Estatus de los Trámites", 
+                                     hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
+                    st.plotly_chart(fig_pie, use_container_width=True)
+                
+                with col2:
+                    # Contar trámites por persona
+                    res_ent = df['entregado_a'].value_counts().reset_index()
+                    res_ent.columns = ['Personal', 'Cantidad']
+                    fig_bar = px.bar(res_ent, x='Personal', y='Cantidad', title="Carga de Trabajo por Personal",
+                                     color='Cantidad', color_continuous_scale='Viridis')
+                    st.plotly_chart(fig_bar, use_container_width=True)
+                
+                st.subheader("Trámites por Departamento")
+                fig_dept = px.histogram(df, x='departamento', color='status', barmode='group', title="Distribución por Áreas")
+                st.plotly_chart(fig_dept, use_container_width=True)
+            else:
+                st.info("Aún no hay datos registrados para generar gráficas.")
+
+        # --- ALERTAS RÁPIDAS ---
         elif mod == "🚨 Alertas Rápidas":
             st.title("🚨 Centro de Notificaciones")
             conn = get_db_connection()
-            query_p = "SELECT folio_dir, asunto, departamento, fecha_ingreso FROM correspondencia WHERE status='PENDIENTE'"
-            if u_rol not in ['Director', 'Administradora']:
-                query_p += f" AND departamento='{u_depto}'"
-            df_pend = pd.read_sql_query(query_p, conn)
-            st.subheader(f"Trámites Pendientes ({len(df_pend)})")
-            st.dataframe(df_pend, use_container_width=True)
+            q_p = "SELECT folio_dir, asunto, departamento FROM correspondencia WHERE status='PENDIENTE'"
+            if u_rol not in ['Director', 'Administradora']: q_p += f" AND departamento='{u_depto}'"
+            st.dataframe(pd.read_sql_query(q_p, conn), use_container_width=True)
             conn.close()
 
-        # --- NUEVO FOLIO CON LIMPIEZA ---
+        # --- NUEVO FOLIO (IA) ---
         elif mod == "📥 Nuevo Folio (IA)":
             st.title("📥 Registro de Documentos")
             if 'ia_data' not in st.session_state:
                 st.session_state.ia_data = {"folio":"", "cuenta":"", "sicamdtr":"", "ext":"", "dep":"", "asunto":""}
             
             foto_cap = st.camera_input("Capturar Oficio")
-            c_ia1, c_ia2 = st.columns(2)
-            with c_ia1:
+            c_btn1, c_btn2 = st.columns(2)
+            with c_btn1:
                 if foto_cap and st.button("🤖 IA: Analizar"):
                     img = Image.open(foto_cap)
-                    response = model.generate_content(["Extraer: Folio, Cuenta, SICAMDTR, Externo, Dependencia, Asunto. Formato F:x|C:x|S:x|E:x|D:x|A:x", img])
+                    response = model.generate_content(["Analiza: Folio, Cuenta, SICAMDTR, Externo, Dependencia, Asunto. Formato F:x|C:x|S:x|E:x|D:x|A:x", img])
                     res = response.text.split("|")
                     st.session_state.ia_data = {"folio": res[0].split(":")[1], "cuenta": res[1].split(":")[1], "sicamdtr": res[2].split(":")[1], "ext": res[3].split(":")[1], "dep": res[4].split(":")[1], "asunto": res[5].split(":")[1]}
-            with c_ia2:
+            with c_btn2:
                 if st.button("🧹 Limpiar Formulario"):
-                    st.session_state.ia_data = {"folio":"", "cuenta":"", "sicamdtr":"", "ext":"", "dep":"", "asunto":""}
-                    st.rerun()
+                    st.session_state.ia_data = {"folio":"", "cuenta":"", "sicamdtr":"", "ext":"", "dep":"", "asunto":""}; st.rerun()
 
             with st.form("nuevo_registro"):
                 c1, c2 = st.columns(2)
                 with c1:
-                    f1=st.text_input("Folio", value=st.session_state.ia_data["folio"]); f2=st.text_input("Cuenta", value=st.session_state.ia_data["cuenta"])
-                    f3=st.text_input("SICAMDTR", value=st.session_state.ia_data["sicamdtr"]); f4=st.text_input("Folio Ext", value=st.session_state.ia_data["ext"])
-                    f5=st.text_input("Dependencia", value=st.session_state.ia_data["dep"]); f6=st.text_area("Asunto", value=st.session_state.ia_data["asunto"])
-                    f7=st.text_input("Ubicación Predio"); f8=st.text_input("Fecha", value=str(date.today()))
+                    ni1=st.text_input("Folio", value=st.session_state.ia_data["folio"]); ni2=st.text_input("Cuenta", value=st.session_state.ia_data["cuenta"])
+                    ni3=st.text_input("SICAMDTR", value=st.session_state.ia_data["sicamdtr"]); ni4=st.text_input("Folio Ext", value=st.session_state.ia_data["ext"])
+                    ni5=st.text_input("Dependencia", value=st.session_state.ia_data["dep"]); ni6=st.text_area("Asunto", value=st.session_state.ia_data["asunto"])
+                    ni7=st.text_input("Ubicación Predio"); ni8=st.text_input("Fecha", value=str(date.today()))
                 with c2:
-                    f9=st.selectbox("Área Destino", AREAS); f10=st.text_input("Asignado a"); f11=st.text_input("Recibe")
-                    f12=st.selectbox("Estatus", ["PENDIENTE", "EN PROCESO", "FINALIZADO"]); f13=st.text_area("Seguimiento")
-                    f14=st.text_input("Ubicación Física"); f15=st.text_input("Firma"); f16=st.text_input("Capturista", value=u_nom, disabled=True)
+                    ni9=st.selectbox("Área", AREAS); ni10=st.text_input("Asignado"); ni11=st.text_input("Recibe")
+                    ni12=st.selectbox("Estatus", ["PENDIENTE", "EN PROCESO"]); ni13=st.text_area("Seguimiento")
+                    ni14=st.text_input("Ubicación Física"); ni15=st.text_input("Firma"); ni16=st.text_input("Capturista", value=u_nom, disabled=True)
                 
                 if st.form_submit_button("💾 Guardar"):
                     img_bytes = foto_cap.getvalue() if foto_cap else None
                     conn = get_db_connection()
                     conn.execute("INSERT INTO correspondencia VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                                 (f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, img_bytes))
+                                 (ni1, ni2, ni3, ni4, ni5, ni6, ni7, ni8, ni9, ni10, ni11, ni12, ni13, ni14, ni15, ni16, img_bytes))
                     conn.commit(); conn.close(); st.success("Guardado"); st.rerun()
 
-        # --- REGISTRO MAESTRO (EDITAR, TURNAR Y BORRAR) ---
+        # --- REGISTRO MAESTRO (DIVIDIDO) ---
         elif mod == "📑 Registro Maestro":
             st.title("📑 Gestión de Folios")
             conn = get_db_connection()
-
+            
             if u_rol == 'Administradora':
                 with st.expander("🗑️ ZONA DE ELIMINACIÓN (ADMIN)"):
-                    f_del = st.text_input("Ingrese Folio para borrar:")
-                    if st.button("ELIMINAR PERMANENTEMENTE"):
+                    f_del = st.text_input("Ingrese Folio exacto para borrar:")
+                    if st.button("BORRAR PERMANENTEMENTE"):
                         if f_del:
                             conn.execute("DELETE FROM correspondencia WHERE folio_dir=?", (f_del,))
                             conn.commit(); st.warning("Eliminado."); st.rerun()
 
-            # Panel de Edición y Turnado
-            df_sel = pd.read_sql_query("SELECT folio_dir FROM correspondencia", conn)
-            sel_f = st.selectbox("🔍 Seleccionar Folio para Editar o Turnar:", [""] + df_sel['folio_dir'].tolist())
-            
-            if sel_f:
-                datos = conn.execute("SELECT * FROM correspondencia WHERE folio_dir=?", (sel_f,)).fetchone()
-                with st.form("editar_folio"):
-                    st.subheader(f"Editando: {sel_f}")
-                    ce1, ce2 = st.columns(2)
-                    with ce1:
-                        ne9 = st.selectbox("Turnar a Área", AREAS, index=AREAS.index(datos['departamento']))
-                        ne12 = st.selectbox("Nuevo Estatus", ["PENDIENTE", "EN PROCESO", "FINALIZADO"], index=0)
-                    with ce2:
-                        ne10 = st.text_input("Reasignar a Persona", value=datos['entregado_a'])
-                        ne13 = st.text_area("Actualizar Seguimiento", value=datos['seguimiento'])
-                    if st.form_submit_button("🔄 Actualizar y Turnar"):
-                        conn.execute("UPDATE correspondencia SET departamento=?, status=?, entregado_a=?, seguimiento=? WHERE folio_dir=?", (ne9, ne12, ne10, ne13, sel_f))
-                        conn.commit(); st.success("Actualizado"); st.rerun()
+            tab_turnar, tab_editar = st.tabs(["🔄 Turnar Folio", "📝 Editar Datos (16 campos)"])
+            df_folios = pd.read_sql_query("SELECT folio_dir FROM correspondencia", conn)
+            lista_f = [""] + df_folios['folio_dir'].tolist()
 
-            # Visualización de Tablas
+            with tab_turnar:
+                sel_t = st.selectbox("Folio para Turnar:", lista_f, key="s_t")
+                if sel_t:
+                    d_t = conn.execute("SELECT departamento, entregado_a, status FROM correspondencia WHERE folio_dir=?", (sel_t,)).fetchone()
+                    ct1, ct2 = st.columns(2)
+                    with ct1:
+                        nt_depto = st.selectbox("Nuevo Departamento:", AREAS, index=AREAS.index(d_t['departamento']))
+                        nt_status = st.selectbox("Nuevo Estatus:", ["PENDIENTE", "EN PROCESO", "FINALIZADO"])
+                    with ct2:
+                        nt_pers = st.text_input("Asignar a:", value=d_t['entregado_a'])
+                    if st.button("Confirmar Turnado"):
+                        conn.execute("UPDATE correspondencia SET departamento=?, status=?, entregado_a=? WHERE folio_dir=?", (nt_depto, nt_status, nt_pers, sel_t))
+                        conn.commit(); st.success("Folio turnado"); st.rerun()
+
+            with tab_editar:
+                sel_e = st.selectbox("Folio para Editar:", lista_f, key="s_e")
+                if sel_e:
+                    de = conn.execute("SELECT * FROM correspondencia WHERE folio_dir=?", (sel_e,)).fetchone()
+                    with st.form("edit_total"):
+                        ce1, ce2 = st.columns(2)
+                        with ce1:
+                            e2=st.text_input("Cuenta", de['cuenta']); e3=st.text_input("SICAMDTR", de['sicamdtr'])
+                            e4=st.text_input("Folio Ext", de['folio_ext']); e5=st.text_input("Dependencia", de['dependencia'])
+                            e6=st.text_area("Asunto", de['asunto']); e7=st.text_input("Ubicación", de['nombre_ubica'])
+                            e8=st.text_input("Fecha", de['fecha_ingreso'])
+                        with ce2:
+                            e9=st.selectbox("Área", AREAS, index=AREAS.index(de['departamento']))
+                            e10=st.text_input("Asignado", de['entregado_a']); e11=st.text_input("Recibe", de['recibe_investiga'])
+                            e12=st.selectbox("Estatus", ["PENDIENTE", "EN PROCESO", "FINALIZADO"])
+                            e13=st.text_area("Seguimiento", de['seguimiento']); e14=st.text_input("Ubicación F.", de['ubicacion_fisica'])
+                            e15=st.text_input("Firma", de['quien_firma'])
+                        if st.form_submit_button("Guardar Cambios"):
+                            conn.execute("UPDATE correspondencia SET cuenta=?, sicamdtr=?, folio_ext=?, dependencia=?, asunto=?, nombre_ubica=?, fecha_ingreso=?, departamento=?, entregado_a=?, recibe_investiga=?, status=?, seguimiento=?, ubicacion_fisica=?, quien_firma=? WHERE folio_dir=?", (e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15, sel_e))
+                            conn.commit(); st.success("Datos actualizados"); st.rerun()
+
+            # TABLAS DE VISUALIZACIÓN
             if u_rol in ['Director', 'Administradora']:
-                tabs = st.tabs(["🌎 Global"] + AREAS)
+                v_tabs = st.tabs(["🌎 Global"] + AREAS)
                 for i, area in enumerate(["Global"] + AREAS):
-                    with tabs[i]:
-                        q = "SELECT * FROM correspondencia" if area == "Global" else f"SELECT * FROM correspondencia WHERE departamento='{area}'"
-                        st.dataframe(pd.read_sql_query(q, conn).drop(columns=['foto'], errors='ignore'))
+                    with v_tabs[i]:
+                        query = "SELECT * FROM correspondencia" if area == "Global" else f"SELECT * FROM correspondencia WHERE departamento = '{area}'"
+                        st.dataframe(pd.read_sql_query(query, conn).drop(columns=['foto'], errors='ignore'), use_container_width=True)
             else:
-                st.dataframe(pd.read_sql_query("SELECT * FROM correspondencia WHERE departamento=?", conn, params=(u_depto,)).drop(columns=['foto'], errors='ignore'))
+                st.dataframe(pd.read_sql_query("SELECT * FROM correspondencia WHERE departamento = ?", conn, params=(u_depto,)).drop(columns=['foto'], errors='ignore'), use_container_width=True)
             conn.close()
 
-        # --- MENSAJERÍA CON RECIBIDOS ---
+        # --- MENSAJERÍA ---
         elif mod == "✉️ Mensajería":
             st.title("✉️ Buzón")
             conn = get_db_connection()
-            mt1, mt2 = st.tabs(["📤 Enviar Mensaje", "📥 Mensajes Recibidos"])
-            with mt1:
+            t_m1, t_m2 = st.tabs(["📤 Enviar", "📥 Recibidos"])
+            with t_m1:
                 dest = st.selectbox("Para:", [x['nombre'] for x in conn.execute("SELECT nombre FROM usuarios").fetchall()])
-                txt = st.text_area("Escribir...")
+                txt = st.text_area("Mensaje")
                 if st.button("Enviar"):
-                    conn.execute("INSERT INTO mensajes (remitente, destinatario, texto, fecha) VALUES (?,?,?,?)", (u_nom, dest, txt, datetime.now().strftime("%d/%m %H:%M")))
+                    conn.execute("INSERT INTO mensajes (remitente, destinatario, texto, fecha) VALUES (?,?,?,?)", (u_nom, dest, txt, str(datetime.now())))
                     conn.commit(); st.success("Enviado")
-            with mt2:
-                m_rec = pd.read_sql_query("SELECT remitente, texto, fecha FROM mensajes WHERE destinatario=? ORDER BY id DESC", conn, params=(u_nom,))
+            with t_m2:
+                m_rec = pd.read_sql_query("SELECT remitente, texto, fecha FROM mensajes WHERE destinatario=?", conn, params=(u_nom,))
                 for _, m in m_rec.iterrows():
-                    with st.chat_message("user"):
-                        st.write(f"**De:** {m['remitente']} ({m['fecha']})"); st.write(m['texto'])
+                    with st.chat_message("user"): st.write(f"**De:** {m['remitente']} ({m['fecha']})"); st.write(m['texto'])
             conn.close()
 
-        # --- MI PERFIL CON CAMBIO DE CLAVE ---
+        # --- MI PERFIL ---
         elif mod == "👤 Mi Perfil":
             st.title("👤 Configuración")
-            st.write(f"Nombre: **{u_nom}** | Rol: **{u_rol}**")
-            st.divider()
-            st.subheader("🔑 Cambiar Contraseña")
-            with st.form("pass_form"):
-                n_p = st.text_input("Nueva Contraseña", type="password")
-                c_p = st.text_input("Confirmar", type="password")
-                if st.form_submit_button("Cambiar"):
-                    if n_p == c_p and n_p != "":
+            st.write(f"Usuario: **{u_nom}** | Rol: **{u_rol}**")
+            with st.form("c_pass"):
+                new_p = st.text_input("Nueva Contraseña", type="password")
+                conf_p = st.text_input("Confirmar", type="password")
+                if st.form_submit_button("Actualizar Clave"):
+                    if new_p == conf_p and new_p != "":
                         conn = get_db_connection()
-                        conn.execute("UPDATE usuarios SET password=? WHERE user=?", (n_p, u_id))
-                        conn.commit(); conn.close(); st.success("Contraseña cambiada.")
-                    else: st.error("No coinciden.")
+                        conn.execute("UPDATE usuarios SET password=? WHERE user=?", (new_p, u_id))
+                        conn.commit(); conn.close(); st.success("Contraseña actualizada.")
+                    else: st.error("Las claves no coinciden.")
 
         if st.sidebar.button("Cerrar Sesión"):
             conn = get_db_connection()
