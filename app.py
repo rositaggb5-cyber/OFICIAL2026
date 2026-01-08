@@ -41,7 +41,7 @@ def init_db():
     conn.commit(); conn.close()
 
 init_db()
-st.set_page_config(page_title="SIGC V22", layout="wide")
+st.set_page_config(page_title="OFICIAL 2026", layout="wide")
 
 # --- ESTILOS ---
 st.markdown("""<style>
