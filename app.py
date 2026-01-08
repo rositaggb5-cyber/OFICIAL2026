@@ -22,18 +22,28 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     c = conn.cursor()
+    
+    # 1. Correspondencia
     c.execute('''CREATE TABLE IF NOT EXISTS correspondencia 
                   (folio_dir TEXT PRIMARY KEY, cuenta TEXT, sicamdtr TEXT, folio_ext TEXT, 
                   dependencia TEXT, asunto TEXT, nombre_ubica TEXT, fecha_ingreso TEXT, 
                   departamento TEXT, entregado_a TEXT, recibe_investiga TEXT, status TEXT, 
                   seguimiento TEXT, ubicacion_fisica TEXT, quien_firma TEXT, capturista TEXT, foto BLOB)''')
+    
+    try: c.execute("ALTER TABLE correspondencia ADD COLUMN confirmado INTEGER DEFAULT 0")
+    except: pass
+
+    # 2. Usuarios
     c.execute("CREATE TABLE IF NOT EXISTS usuarios (user TEXT PRIMARY KEY, password TEXT, nombre TEXT, rol TEXT, depto TEXT, avatar TEXT, online TEXT)")
+    
+    # 3. Mensajes
     c.execute("CREATE TABLE IF NOT EXISTS mensajes (id INTEGER PRIMARY KEY AUTOINCREMENT, remitente TEXT, destinatario TEXT, texto TEXT, fecha TEXT, leido INTEGER DEFAULT 0)")
-    try:
-        c.execute("ALTER TABLE mensajes ADD COLUMN leido INTEGER DEFAULT 0")
+    try: c.execute("ALTER TABLE mensajes ADD COLUMN leido INTEGER DEFAULT 0")
     except: pass 
-    c.execute("CREATE TABLE IF NOT EXISTS oficios_bloqueados (folio TEXT PRIMARY KEY, folio_salida TEXT, contenido TEXT, bloqueado INTEGER DEFAULT 0, redactor TEXT, fecha_bloqueo TEXT)")
+
+    # 4. Consejo
     c.execute("CREATE TABLE IF NOT EXISTS consejo_asistencia (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre_asiste TEXT, institucion TEXT, tipo TEXT, carta_blob BLOB, fecha TEXT)")
+    
     try:
         c.execute("INSERT INTO usuarios VALUES ('ADMIN', '1234', 'ROSA GUTIERREZ', 'Administradora', 'DIRECCIÓN', '👩🏻‍💼', 'OFFLINE')")
         conn.commit()
@@ -41,35 +51,53 @@ def init_db():
     conn.commit(); conn.close()
 
 init_db()
-st.set_page_config(page_title="OFICIAL 2026", layout="wide")
+st.set_page_config(page_title="SIGC V22", layout="wide")
 
 # --- ESTILOS ---
 st.markdown("""<style>
-    .hoja-oficial { 
-        background-color: white !important; 
-        color: black !important; 
-        border: 1px solid #ccc; 
-        padding: 50px; 
-        font-family: 'Times New Roman'; 
-        box-shadow: 5px 5px 15px rgba(0,0,0,0.1); 
-        margin-bottom: 20px;
-    }
-    .marca-agua { 
-        position: absolute; top: 30%; left: 15%; 
-        transform: rotate(-30deg); font-size: 80px; 
-        color: rgba(200,0,0,0.1); font-weight: bold; pointer-events: none; 
-    }
-    .alerta-box {
-        padding: 15px; border-radius: 10px; margin-bottom: 10px;
-        border-left: 5px solid #ff4b4b; background-color: rgba(255, 75, 75, 0.1);
-    }
+    .hoja-oficial { background-color: white !important; color: black !important; border: 1px solid #ccc; padding: 20px; font-family: 'Times New Roman'; margin-bottom: 20px; }
+    .alerta-box { padding: 15px; border-radius: 10px; margin-bottom: 10px; border-left: 5px solid #ff4b4b; background-color: rgba(255, 75, 75, 0.1); }
+    .confirm-box { background-color: #e6fffa; border: 1px solid #004d40; padding: 10px; border-radius: 5px; margin-bottom: 5px; }
+    /* Estilo sutil para el tutorial */
+    .stExpander { border: 1px solid rgba(0,0,0,0.1); border-radius: 8px; background-color: rgba(240,240,240,0.3); }
 </style>""", unsafe_allow_html=True)
 
 def play_sound():
     components.html("""<audio autoplay><source src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" type="audio/mp3"></audio>""", height=0)
 
+# --- FUNCIÓN NUEVA: TUTORIAL CONTEXTUAL ---
+def mostrar_tutorial(modulo):
+    with st.expander("❓ ¿Cómo funciona esta pantalla? (Clic para ver ejemplo)"):
+        if modulo == "Dashboard":
+            st.info("📊 **Tablero:** Aquí ves el resumen gráfico. \n- **Pastel:** Estatus general.\n- **Barras:** Carga de trabajo por Área y por Persona.")
+        elif modulo == "Alertas":
+            st.info("🚨 **Alertas:** Solo verás folios 'Pendientes' o con 'Faltan Documentos'. Si está todo terminado, esta pantalla estará vacía.")
+        elif modulo == "Nuevo Folio":
+            st.info("""📥 **Entradas:** 1. Llena los datos manuales o...
+            2. **Uso de IA:** Toma una foto clara del oficio y presiona '🤖 IA Auto-llenado'. El sistema leerá el folio, asunto y cuenta por ti.
+            3. Al guardar, el estatus inicia como 'PENDIENTE' y el receptor debe confirmarlo.""")
+        elif modulo == "Registro Maestro":
+            st.info("""📑 **Maestro de Entradas:**
+            - **👁️ Ver Tabla:** Usa los filtros arriba para buscar por folio o texto.
+            - **✏️ Editar:** Selecciona un folio. 
+                - **Admin/Director:** Editan todo.
+                - **Jefe/Secretaria:** Editan todo SI es de su área.
+                - **Operativo:** Edita todo SI el folio es suyo.
+                - *Si el campo está gris, es solo lectura.*
+            - **🔄 Turnar:** Selecciona un folio padre (ej. 100) y crea hijos (100-A, 100-B) heredando los datos.""")
+        elif modulo == "Oficios Salida":
+            st.info("📄 **Salidas:** Genera folios internos (TES/DCAT). El sistema calcula el consecutivo automáticamente (ej. 005/2026).")
+        elif modulo == "Maestro Salidas":
+            st.info("📑 **Control de Salidas:** Mismo funcionamiento que el Maestro de Entradas, pero exclusivo para folios TES/DCAT. Solo el creador o su jefe pueden editar.")
+        elif modulo == "Perfil":
+            st.info("""👤 **Tu Espacio Personal:**
+            - **🔔 Confirmaciones:** Si tienes folios asignados nuevos, aparecerán aquí en amarillo. Debes dar clic en **'ACEPTAR'** para acusar de recibido.
+            - **Cambio de Clave:** Puedes actualizar tu contraseña aquí.""")
+        elif modulo == "Chat":
+            st.info("✉️ **Mensajería:** Envía mensajes rápidos a otros usuarios. Si tienes mensajes sin leer, sonará una campana.")
+
 AREAS = ["DIRECCIÓN", "TRANSMISIONES", "COORDINACIÓN", "CERTIFICACIONES", "VALUACIÓN", "CARTOGRAFÍA", "TRÁMITE Y REGISTRO"]
-ROLES = ["Administradora", "Director", "Jefe de Área", "Operativo", "Consejero"]
+ROLES = ["Administradora", "Director", "Jefe de Área", "Secretaria", "Operativo", "Consejero"]
 
 if 'auth' not in st.session_state: st.session_state.auth = False
 if 'last_msg_count' not in st.session_state: st.session_state.last_msg_count = 0
@@ -78,18 +106,22 @@ if 'last_msg_count' not in st.session_state: st.session_state.last_msg_count = 0
 menu = st.sidebar.radio("Navegación:", ["🔍 Consulta Pública", "🔐 Sistema Interno"])
 
 # ==============================================================================
-# MÓDULO 1: CONSULTA PÚBLICA
+# MÓDULO 1: CONSULTA PÚBLICA (FILTRO APLICADO)
 # ==============================================================================
 if menu == "🔍 Consulta Pública":
     st.title("🏛️ Consulta de Trámites")
     q = st.text_input("Ingrese número de Folio:")
     if q:
         conn = get_db_connection()
-        df = pd.read_sql_query("SELECT folio_dir, status, departamento, entregado_a, seguimiento FROM correspondencia WHERE folio_dir LIKE ?", conn, params=(f"%{q}%",))
+        df = pd.read_sql_query("SELECT folio_dir, status, departamento, entregado_a, seguimiento, confirmado FROM correspondencia WHERE folio_dir LIKE ? AND folio_dir NOT LIKE 'TES/DCAT/%'", conn, params=(f"%{q}%",))
         if not df.empty:
             for i, r in df.iterrows():
                 with st.expander(f"📂 {r['folio_dir']}"):
-                    st.write(f"**Atendido por:** {r['entregado_a']}")
+                    encargado = r['entregado_a']
+                    if r['confirmado'] == 0 and encargado:
+                        encargado += " (Por Confirmar)"
+                    
+                    st.write(f"**Atendido por:** {encargado}")
                     st.write(f"**Ubicación:** {r['departamento']}")
                     stat = r['status'].upper()
                     seg = r['seguimiento'].upper() if r['seguimiento'] else ""
@@ -136,17 +168,13 @@ else:
         st.sidebar.title(f"{u_avatar} {u_nom}")
         st.sidebar.caption(f"{u_rol} | {u_depto}")
 
-        # --- ORDEN EXACTO ---
-        opcs = []
-        opcs.append("📊 Dashboard")
-        opcs.append("🚨 Alertas Rápidas")
-        opcs.append("📥 Nuevo Folio (IA)")
-        
-        if u_rol in ["Administradora", "Director", "Jefe de Área"]:
-            opcs.append("📄 Oficios Salida") 
-            opcs.append("📑 Maestro Salidas") # <--- NUEVO MÓDULO AQUÍ
-
+        opcs = ["📊 Dashboard", "🚨 Alertas Rápidas", "📥 Nuevo Folio (IA)"]
         opcs.append("📑 Registro Maestro")
+        
+        if u_rol in ["Administradora", "Director", "Jefe de Área", "Secretaria", "Operativo"]:
+            opcs.append("📄 Oficios Salida") 
+            opcs.append("📑 Maestro Salidas")
+
         opcs.append("👥 Monitor de Personal")
         opcs.append("✉️ Mensajería")
         opcs.append("👤 Mi Perfil")
@@ -159,6 +187,7 @@ else:
 
         # 1. DASHBOARD
         if mod == "📊 Dashboard":
+            mostrar_tutorial("Dashboard")
             st.title("📊 Tablero de Control")
             conn = get_db_connection()
             if u_rol in ["Administradora", "Director"]:
@@ -180,18 +209,20 @@ else:
 
         # 2. ALERTAS
         elif mod == "🚨 Alertas Rápidas":
+            mostrar_tutorial("Alertas")
             st.title("🚨 Centro de Alertas")
             conn = get_db_connection()
-            pendientes = pd.read_sql_query("SELECT folio_dir, asunto, fecha_ingreso, status FROM correspondencia WHERE status='PENDIENTE' OR status='FALTAN DOCUMENTOS'", conn)
+            pendientes = pd.read_sql_query("SELECT folio_dir, asunto, fecha_ingreso, status FROM correspondencia WHERE status LIKE '%PENDIENTE%' OR status LIKE '%FALTAN DOCUMENTOS%'", conn)
             if not pendientes.empty:
                 for i, r in pendientes.iterrows():
-                    color = "🔴" if r['status'] == "FALTAN DOCUMENTOS" else "🟡"
+                    color = "🔴" if "FALTA" in r['status'] else "🟡"
                     st.markdown(f"""<div class="alerta-box"><h4>{color} Folio: {r['folio_dir']}</h4><p><b>Asunto:</b> {r['asunto']}</p><p><i>Ingresó: {r['fecha_ingreso']} | Estatus: {r['status']}</i></p></div>""", unsafe_allow_html=True)
             else: st.success("¡Todo al día!")
             conn.close()
 
         # 3. NUEVO FOLIO
         elif mod == "📥 Nuevo Folio (IA)":
+            mostrar_tutorial("Nuevo Folio")
             st.title("📥 Registro de Entrada")
             if 'ia_data' not in st.session_state: st.session_state.ia_data = {"folio":"", "cuenta":"", "sicamdtr":"", "ext":"", "dep":"", "asunto":""}
             conn = get_db_connection()
@@ -215,21 +246,136 @@ else:
                     ni13=st.text_area("13. Seguimiento")
                     ni14=st.text_input("14. Ub. Física"); ni15=st.text_input("15. Firma"); ni16=st.text_input("16. Capturista", u_nom, disabled=True)
                 save = st.form_submit_button("💾 GUARDAR ENTRADA")
+            
             foto = st.camera_input("Evidencia")
             if foto and st.button("🤖 IA Auto-llenado"):
                 try:
                     res = model.generate_content(["Formato F:x|C:x|S:x|E:x|D:x|A:x", Image.open(foto)]).text.split("|")
                     st.session_state.ia_data = {"folio":res[0].split(":")[1],"cuenta":res[1].split(":")[1],"sicamdtr":res[2].split(":")[1],"ext":res[3].split(":")[1],"dep":res[4].split(":")[1],"asunto":res[5].split(":")[1]}
                     st.rerun()
-                except: st.error("Error IA")
+                except Exception as e: st.error(f"Error IA: {e}")
+            
             if save:
                 blob = foto.getvalue() if foto else None
                 conn = get_db_connection()
-                conn.execute("INSERT INTO correspondencia VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (ni1,ni2,ni3,ni4,ni5,ni6,ni7,ni8,ni9,ni10,ni11,ni12,ni13,ni14,ni15,ni16,blob))
-                conn.commit(); conn.close(); st.success("Entrada Guardada"); st.rerun()
+                try:
+                    conn.execute("""INSERT INTO correspondencia 
+                        (folio_dir, cuenta, sicamdtr, folio_ext, dependencia, asunto, nombre_ubica, fecha_ingreso, 
+                         departamento, entregado_a, recibe_investiga, status, seguimiento, ubicacion_fisica, 
+                         quien_firma, capturista, foto, confirmado) 
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)""", 
+                        (ni1,ni2,ni3,ni4,ni5,ni6,ni7,ni8,ni9,ni10,ni11,ni12,ni13,ni14,ni15,ni16,blob))
+                    conn.commit(); st.success("Entrada Guardada"); st.rerun()
+                except Exception as e: st.error(f"Error al guardar: {e}")
+                conn.close()
 
-        # 4. OFICIOS SALIDA
+        # 4. REGISTRO MAESTRO
+        elif mod == "📑 Registro Maestro":
+            mostrar_tutorial("Registro Maestro")
+            st.title("📑 Registro Maestro")
+            conn = get_db_connection()
+            # Para los selectboxes de edición
+            users = [r['nombre'] for r in conn.execute("SELECT nombre FROM usuarios").fetchall()]
+
+            col_f1, col_f2 = st.columns(2)
+            filtro_area = col_f1.selectbox("Filtrar Área:", ["TODAS"]+AREAS)
+            filtro_txt = col_f2.text_input("Buscar texto:")
+            
+            q_sql = "SELECT * FROM correspondencia WHERE folio_dir NOT LIKE 'TES/DCAT/%'"
+            if filtro_area != "TODAS": q_sql += f" AND departamento='{filtro_area}'"
+            if filtro_txt: q_sql += f" AND (folio_dir LIKE '%{filtro_txt}%' OR asunto LIKE '%{filtro_txt}%')"
+            df = pd.read_sql_query(q_sql, conn)
+            
+            t1, t2, t3 = st.tabs(["👁️ Ver Tabla", "✏️ Editar (Total)", "🔄 Turnar"])
+            with t1: 
+                df_view = df.copy()
+                df_view['entregado_a'] = df_view.apply(lambda x: f"{x['entregado_a']} (Por Confirmar)" if x['entregado_a'] and x['confirmado']==0 else x['entregado_a'], axis=1)
+                st.dataframe(df_view.drop(columns=['foto', 'confirmado'], errors='ignore'), use_container_width=True)
+            
+            with t2:
+                sel_e = st.selectbox("Folio a Editar:", [""]+df['folio_dir'].tolist())
+                if sel_e:
+                    d = df[df['folio_dir']==sel_e].iloc[0]
+                    with st.form("edit"):
+                        # --- PERMISOS DE EDICIÓN ---
+                        can_edit = False
+                        if u_rol in ["Administradora", "Director"]: can_edit = True
+                        elif u_rol in ["Jefe de Área", "Secretaria"] and d['departamento'] == u_depto: can_edit = True
+                        elif u_rol == "Operativo" and d['entregado_a'] == u_nom: can_edit = True
+                            
+                        disabled_field = not can_edit
+                        if not can_edit: st.warning("🔒 Solo lectura: No tienes permisos para editar este folio.")
+
+                        # --- FORMULARIO COMPLETO ---
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            e1=st.text_input("1. Folio (Protegido)", d['folio_dir'], disabled=True)
+                            e2=st.text_input("2. Cuenta", d['cuenta'], disabled=disabled_field)
+                            e3=st.text_input("3. SICAMDTR", d['sicamdtr'], disabled=disabled_field)
+                            e4=st.text_input("4. Ext", d['folio_ext'], disabled=disabled_field)
+                            e5=st.text_input("5. Dependencia", d['dependencia'], disabled=disabled_field)
+                            e6=st.text_area("6. Asunto", d['asunto'], disabled=disabled_field)
+                            e7=st.text_input("7. Nombre Ubica", d['nombre_ubica'], disabled=disabled_field)
+                            e8=st.text_input("8. Fecha Ingreso", d['fecha_ingreso'], disabled=disabled_field)
+                        with c2:
+                            e9=st.selectbox("9. Departamento", AREAS, index=AREAS.index(d['departamento']) if d['departamento'] in AREAS else 0, disabled=disabled_field)
+                            e10=st.selectbox("10. Entregado A", [""]+users, index=([""]+users).index(d['entregado_a']) if d['entregado_a'] in users else 0, disabled=disabled_field)
+                            e11=st.text_input("11. Recibe/Investiga", d['recibe_investiga'], disabled=disabled_field)
+                            e12=st.selectbox("12. Estatus", ["PENDIENTE","EN PROCESO","TERMINADO","FALTAN DOCUMENTOS"], index=["PENDIENTE","EN PROCESO","TERMINADO","FALTAN DOCUMENTOS"].index(d['status']) if d['status'] in ["PENDIENTE","EN PROCESO","TERMINADO","FALTAN DOCUMENTOS"] else 0, disabled=disabled_field)
+                            e13=st.text_area("13. Seguimiento", d['seguimiento'], disabled=disabled_field)
+                            e14=st.text_input("14. Ub. Física", d['ubicacion_fisica'], disabled=disabled_field)
+                            e15=st.text_input("15. Quien Firma", d['quien_firma'], disabled=disabled_field)
+                            e16=st.text_input("16. Capturista", d['capturista'], disabled=True)
+                        
+                        del_ck = False
+                        if u_rol == "Administradora": 
+                            st.divider(); del_ck = st.checkbox("Habilitar Borrado (Solo Admin)")
+
+                        if can_edit and st.form_submit_button("💾 ACTUALIZAR DATOS"):
+                            conn.execute("""UPDATE correspondencia SET 
+                                cuenta=?, sicamdtr=?, folio_ext=?, dependencia=?, asunto=?, nombre_ubica=?, fecha_ingreso=?, 
+                                departamento=?, entregado_a=?, recibe_investiga=?, status=?, seguimiento=?, ubicacion_fisica=?, quien_firma=? 
+                                WHERE folio_dir=?""", 
+                                (e2,e3,e4,e5,e6,e7,e8,e9,e10,e11,e12,e13,e14,e15,sel_e))
+                            conn.commit(); st.success("Datos Actualizados"); st.rerun()
+                        
+                        if del_ck and st.form_submit_button("❌ ELIMINAR FOLIO"):
+                            conn.execute("DELETE FROM correspondencia WHERE folio_dir=?", (sel_e,))
+                            conn.commit(); st.warning("Eliminado"); st.rerun()
+            with t3:
+                # --- PESTAÑA DE DERIVAR ---
+                padre = st.selectbox("Padre:", [""]+df['folio_dir'].tolist())
+                if padre:
+                    dd = df[df['folio_dir']==padre].iloc[0]
+                    st.info(f"Generando turno desde: **{padre}**")
+                    
+                    idx_dep = AREAS.index(dd['departamento']) if dd['departamento'] in AREAS else 0
+                    idx_usr = ([""]+users).index(dd['entregado_a']) if dd['entregado_a'] in ([""]+users) else 0
+                    
+                    col_t1, col_t2 = st.columns(2)
+                    new_depto = col_t1.selectbox("Turnar a Área:", AREAS, index=idx_dep)
+                    new_user = col_t2.selectbox("Asignar Persona:", [""]+users, index=idx_usr)
+
+                    if st.button("Generar Derivación (Turnar)"):
+                        base = padre.split("-")[0]
+                        cnt = conn.execute(f"SELECT COUNT(*) FROM correspondencia WHERE folio_dir LIKE '{base}-%'").fetchone()[0]
+                        abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                        new_folio = f"{base}-{abc[cnt]}" if cnt<26 else f"{base}-{cnt}"
+                        
+                        conn.execute("""INSERT INTO correspondencia 
+                            (folio_dir, cuenta, sicamdtr, folio_ext, dependencia, asunto, nombre_ubica, fecha_ingreso, 
+                            departamento, entregado_a, recibe_investiga, status, seguimiento, ubicacion_fisica, 
+                            quien_firma, capturista, foto, confirmado) 
+                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,0)""",
+                            (new_folio, dd['cuenta'], dd['sicamdtr'], dd['folio_ext'], dd['dependencia'], dd['asunto'], 
+                             dd['nombre_ubica'], str(date.today()), new_depto, new_user, dd['recibe_investiga'], 
+                             "PENDIENTE", "", dd['ubicacion_fisica'], dd['quien_firma'], u_nom))
+                        conn.commit(); st.success(f"Turno creado correctamente: {new_folio}"); st.rerun()
+            conn.close()
+
+        # 5. OFICIOS SALIDA
         elif mod == "📄 Oficios Salida":
+            mostrar_tutorial("Oficios Salida")
             st.title("📄 Registro de Salida")
             conn = get_db_connection()
             users = [r['nombre'] for r in conn.execute("SELECT nombre FROM usuarios").fetchall()]
@@ -259,100 +405,82 @@ else:
                     ns16=st.text_input("16. Capturista", u_nom, disabled=True)
                 save_salida = st.form_submit_button("💾 GUARDAR SALIDA")
             if save_salida:
-                conn.execute("INSERT INTO correspondencia VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (ns1,ns2,ns3,ns4,ns5,ns6,ns7,ns8,ns9,ns10,ns11,ns12,ns13,ns14,ns15,ns16,None))
-                conn.commit(); st.success(f"Salida Registrada: {ns1}"); st.rerun()
+                try:
+                    conn.execute("""INSERT INTO correspondencia 
+                        (folio_dir, cuenta, sicamdtr, folio_ext, dependencia, asunto, nombre_ubica, fecha_ingreso, 
+                         departamento, entregado_a, recibe_investiga, status, seguimiento, ubicacion_fisica, 
+                         quien_firma, capturista, foto, confirmado) 
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,1)""", 
+                        (ns1,ns2,ns3,ns4,ns5,ns6,ns7,ns8,ns9,ns10,ns11,ns12,ns13,ns14,ns15,ns16))
+                    conn.commit(); st.success(f"Salida Registrada: {ns1}"); st.rerun()
+                except Exception as e: st.error(f"Error al guardar: {e}")
             conn.close()
 
-        # --- NUEVO: MAESTRO SALIDAS ---
+        # 6. MAESTRO SALIDAS
         elif mod == "📑 Maestro Salidas":
+            mostrar_tutorial("Maestro Salidas")
             st.title("📑 Maestro de Folios de Salida")
             conn = get_db_connection()
-            # Filtra solo los TES/DCAT
-            df = pd.read_sql_query("SELECT * FROM correspondencia WHERE folio_dir LIKE 'TES/DCAT/%'", conn)
+            # Users para los selects
+            users = [r['nombre'] for r in conn.execute("SELECT nombre FROM usuarios").fetchall()]
             
-            t1, t2 = st.tabs(["👁️ Ver Salidas", "✏️ Editar Salida"])
-            with t1:
-                st.dataframe(df.drop(columns=['foto'], errors='ignore'), use_container_width=True)
+            df = pd.read_sql_query("SELECT * FROM correspondencia WHERE folio_dir LIKE 'TES/DCAT/%'", conn)
+            t1, t2 = st.tabs(["👁️ Ver Salidas", "✏️ Editar Salida (Total)"])
+            with t1: st.dataframe(df.drop(columns=['foto'], errors='ignore'), use_container_width=True)
             with t2:
                 sel_e = st.selectbox("Editar Salida:", [""]+df['folio_dir'].tolist())
                 if sel_e:
                     d = df[df['folio_dir']==sel_e].iloc[0]
                     with st.form("edit_salida"):
+                        # --- PERMISOS SALIDAS ---
+                        can_edit = False
+                        # Admin/Director
+                        if u_rol in ["Administradora", "Director"]: can_edit = True
+                        # Jefe/Secretaria (Mismo Depto)
+                        elif u_rol in ["Jefe de Área", "Secretaria"] and d['departamento'] == u_depto: can_edit = True
+                        # Creador (Capturista)
+                        elif d['capturista'] == u_nom: can_edit = True
+                        
+                        disabled_field = not can_edit
+                        if not can_edit: st.warning("🔒 Solo lectura.")
+
+                        # --- FORMULARIO SALIDAS COMPLETO ---
                         c1, c2 = st.columns(2)
                         with c1:
-                            e1=st.text_input("Folio", d['folio_dir'], disabled=True) # Folio no se cambia
-                            e2=st.text_input("Cuenta", d['cuenta'])
-                            e6=st.text_area("Asunto", d['asunto'])
+                            e1=st.text_input("1. Folio Salida", d['folio_dir'], disabled=True)
+                            e2=st.text_input("2. Cuenta", d['cuenta'], disabled=disabled_field)
+                            e3=st.text_input("3. SICAMDTR", d['sicamdtr'], disabled=disabled_field)
+                            e4=st.text_input("4. Ext", d['folio_ext'], disabled=disabled_field)
+                            e5=st.text_input("5. Dependencia Destino", d['dependencia'], disabled=disabled_field)
+                            e6=st.text_area("6. Asunto", d['asunto'], disabled=disabled_field)
+                            e7=st.text_input("7. Ubicación", d['nombre_ubica'], disabled=disabled_field)
+                            e8=st.text_input("8. Fecha Salida", d['fecha_ingreso'], disabled=disabled_field)
                         with c2:
-                            e12=st.selectbox("Estatus", ["TERMINADO", "ENVIADO", "ACUSE PENDIENTE"], index=0)
-                            e14=st.text_input("Archivo Físico", d['ubicacion_fisica'])
+                            e9=st.selectbox("9. Área", AREAS, index=AREAS.index(d['departamento']) if d['departamento'] in AREAS else 0, disabled=disabled_field)
+                            e10=st.selectbox("10. Responsable", [""]+users, index=([""]+users).index(d['entregado_a']) if d['entregado_a'] in users else 0, disabled=disabled_field)
+                            e11=st.selectbox("11. Destinatario", [""]+users, index=([""]+users).index(d['recibe_investiga']) if d['recibe_investiga'] in users else 0, disabled=disabled_field)
+                            e12=st.selectbox("12. Estatus", ["TERMINADO", "ENVIADO", "ACUSE PENDIENTE"], index=["TERMINADO", "ENVIADO", "ACUSE PENDIENTE"].index(d['status']) if d['status'] in ["TERMINADO", "ENVIADO", "ACUSE PENDIENTE"] else 0, disabled=disabled_field)
+                            e13=st.text_area("13. Observaciones", d['seguimiento'], disabled=disabled_field)
+                            e14=st.text_input("14. Archivo Físico", d['ubicacion_fisica'], disabled=disabled_field)
+                            e15=st.text_input("15. Firma", d['quien_firma'], disabled=disabled_field)
+                            e16=st.text_input("16. Capturista", d['capturista'], disabled=True)
                         
                         del_ck = False
-                        if u_rol == "Administradora": 
-                            st.divider(); del_ck = st.checkbox("Habilitar Borrado")
+                        if u_rol == "Administradora": st.divider(); del_ck = st.checkbox("Habilitar Borrado (Solo Admin)")
 
-                        if st.form_submit_button("Actualizar"):
-                            conn.execute("UPDATE correspondencia SET cuenta=?, asunto=?, status=?, ubicacion_fisica=? WHERE folio_dir=?", (e2,e6,e12,e14,sel_e))
+                        if can_edit and st.form_submit_button("💾 ACTUALIZAR SALIDA"):
+                            conn.execute("""UPDATE correspondencia SET 
+                                cuenta=?, sicamdtr=?, folio_ext=?, dependencia=?, asunto=?, nombre_ubica=?, fecha_ingreso=?, 
+                                departamento=?, entregado_a=?, recibe_investiga=?, status=?, seguimiento=?, ubicacion_fisica=?, quien_firma=? 
+                                WHERE folio_dir=?""", 
+                                (e2,e3,e4,e5,e6,e7,e8,e9,e10,e11,e12,e13,e14,e15,sel_e))
                             conn.commit(); st.success("Actualizado"); st.rerun()
-                        
                         if del_ck and st.form_submit_button("❌ ELIMINAR SALIDA"):
                             conn.execute("DELETE FROM correspondencia WHERE folio_dir=?", (sel_e,))
                             conn.commit(); st.warning("Eliminado"); st.rerun()
             conn.close()
 
-        # 5. MAESTRO ENTRADAS
-        elif mod == "📑 Registro Maestro":
-            st.title("📑 Registro Maestro (Entradas)")
-            conn = get_db_connection()
-            col_f1, col_f2 = st.columns(2)
-            filtro_area = col_f1.selectbox("Filtrar Área:", ["TODAS"]+AREAS)
-            filtro_txt = col_f2.text_input("Buscar texto:")
-            # Excluimos las salidas para no revolver
-            q_sql = "SELECT * FROM correspondencia WHERE folio_dir NOT LIKE 'TES/DCAT/%'"
-            if filtro_area != "TODAS": q_sql += f" AND departamento='{filtro_area}'"
-            if filtro_txt: q_sql += f" AND (folio_dir LIKE '%{filtro_txt}%' OR asunto LIKE '%{filtro_txt}%')"
-            df = pd.read_sql_query(q_sql, conn)
-            t1, t2, t3 = st.tabs(["👁️ Ver Tabla", "✏️ Editar (Permisos)", "🔄 Turnar"])
-            with t1: st.dataframe(df.drop(columns=['foto'], errors='ignore'), use_container_width=True)
-            with t2:
-                sel_e = st.selectbox("Folio:", [""]+df['folio_dir'].tolist())
-                if sel_e:
-                    d = df[df['folio_dir']==sel_e].iloc[0]
-                    with st.form("edit"):
-                        bloq = True if u_rol == "Operativo" else False
-                        c1, c2 = st.columns(2)
-                        with c1:
-                            e1=st.text_input("Folio", d['folio_dir'], disabled=bloq)
-                            e2=st.text_input("Cuenta", d['cuenta'], disabled=bloq)
-                            e3=st.text_input("Dependencia", d['dependencia'], disabled=bloq)
-                            e4=st.text_area("Asunto", d['asunto'], disabled=bloq)
-                        with c2:
-                            e12=st.selectbox("Estatus", ["PENDIENTE","EN PROCESO","TERMINADO","FALTAN DOCUMENTOS"], index=0)
-                            e13=st.text_area("Seguimiento", d['seguimiento'])
-                            e14=st.text_input("Ubicación Física", d['ubicacion_fisica'])
-                        del_ck = False
-                        if u_rol == "Administradora": 
-                            st.divider(); del_ck = st.checkbox("Habilitar Borrado")
-                        if st.form_submit_button("Actualizar"):
-                            conn.execute("UPDATE correspondencia SET folio_dir=?, cuenta=?, dependencia=?, asunto=?, status=?, seguimiento=?, ubicacion_fisica=? WHERE folio_dir=?", (e1,e2,e3,e4,e12,e13,e14,sel_e))
-                            conn.commit(); st.success("Listo"); st.rerun()
-                        if del_ck and st.form_submit_button("❌ ELIMINAR"):
-                            conn.execute("DELETE FROM correspondencia WHERE folio_dir=?", (sel_e,))
-                            conn.commit(); st.warning("Eliminado"); st.rerun()
-            with t3:
-                padre = st.selectbox("Padre:", [""]+df['folio_dir'].tolist())
-                if padre and st.button("Derivar"):
-                    base = padre.split("-")[0]
-                    cnt = conn.execute(f"SELECT COUNT(*) FROM correspondencia WHERE folio_dir LIKE '{base}-%'").fetchone()[0]
-                    abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                    new = f"{base}-{abc[cnt]}" if cnt<26 else f"{base}-{cnt}"
-                    dd = df[df['folio_dir']==padre].iloc[0]
-                    conn.execute("INSERT INTO correspondencia VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                                 (new,dd['cuenta'],dd['sicamdtr'],dd['folio_ext'],dd['dependencia'],dd['asunto'],dd['nombre_ubica'],str(date.today()),dd['departamento'],dd['entregado_a'],dd['recibe_investiga'],"PENDIENTE","",dd['ubicacion_fisica'],dd['quien_firma'],u_nom,None))
-                    conn.commit(); st.success(f"Creado {new}"); st.rerun()
-            conn.close()
-
-        # 6. MONITOR
+        # 7. MONITOR
         elif mod == "👥 Monitor de Personal":
             st.title("👥 Monitor de Actividad")
             conn = get_db_connection()
@@ -366,8 +494,9 @@ else:
                 st.dataframe(df_u[df_u['online']!='ONLINE'][['nombre','depto']], use_container_width=True)
             conn.close()
 
-        # 7. MENSAJERÍA
+        # 8. MENSAJERÍA
         elif mod == "✉️ Mensajería":
+            mostrar_tutorial("Chat")
             st.title("✉️ Chat Interno")
             conn = get_db_connection()
             try:
@@ -384,36 +513,48 @@ else:
                     conn.commit(); st.success("Enviado"); st.rerun()
             st.write("---")
             st.subheader("Historial")
-            df_msg = pd.read_sql_query(f"SELECT fecha, remitente, texto FROM mensajes WHERE destinatario='{u_nom}' OR remitente='{u_nom}' ORDER BY id DESC", conn)
-            st.dataframe(df_msg, use_container_width=True)
+            try:
+                df_msg = pd.read_sql_query(f"SELECT fecha, remitente, texto FROM mensajes WHERE destinatario='{u_nom}' OR remitente='{u_nom}' ORDER BY id DESC", conn)
+                st.dataframe(df_msg, use_container_width=True)
+            except: st.info("Bandeja vacía")
             conn.close()
 
-        # 8. PERFIL
+        # 9. PERFIL
         elif mod == "👤 Mi Perfil":
+            mostrar_tutorial("Perfil")
             st.title(f"Perfil: {u_nom}")
             conn = get_db_connection()
-            st.subheader("📂 Mis Folios")
-            mf = pd.read_sql_query("SELECT folio_dir, asunto, status FROM correspondencia WHERE entregado_a=?", conn, params=(u_nom,))
+            
+            # --- CONFIRMACIÓN ---
+            pendientes_conf = pd.read_sql_query("SELECT folio_dir, asunto FROM correspondencia WHERE entregado_a=? AND confirmado=0", conn, params=(u_nom,))
+            if not pendientes_conf.empty:
+                st.warning(f"⚠️ Tienes {len(pendientes_conf)} folios sin confirmar.")
+                st.write("Acepta el trabajo para que quede registrado:")
+                for i, r in pendientes_conf.iterrows():
+                    st.markdown(f"<div class='confirm-box'><b>Folio: {r['folio_dir']}</b><br>{r['asunto']}</div>", unsafe_allow_html=True)
+                    if st.button(f"✅ ACEPTAR {r['folio_dir']}"):
+                        conn.execute("UPDATE correspondencia SET confirmado=1 WHERE folio_dir=?", (r['folio_dir'],))
+                        conn.commit(); st.success("Confirmado"); st.rerun()
+                st.divider()
+
+            st.subheader("📂 Mis Folios Activos")
+            mf = pd.read_sql_query("SELECT folio_dir, asunto, status FROM correspondencia WHERE entregado_a=? AND confirmado=1", conn, params=(u_nom,))
             if not mf.empty: st.dataframe(mf, use_container_width=True)
-            else: st.info("No tienes folios asignados.")
+            else: st.info("No tienes folios activos.")
+            
             with st.expander("🔑 Seguridad"):
                 np = st.text_input("Nueva Clave:", type="password")
                 if st.button("Cambiar Clave"): conn.execute("UPDATE usuarios SET password=? WHERE user=?", (np,u_id)); conn.commit(); st.success("Listo")
             st.divider()
-            with st.expander("🆘 Soporte y Manual"):
+            with st.expander("🆘 Soporte"):
                 st.markdown("### 🔴 Botón de Pánico")
                 if st.button("🚨 NOTIFICAR FALLA A ROSA"):
                      conn.execute("INSERT INTO mensajes (remitente,destinatario,texto,fecha) VALUES (?,?,?,?,?)",(u_nom,"ROSA GUTIERREZ","AYUDA URGENTE - FALLA SISTEMA",str(datetime.now()))); conn.commit(); st.error("Alerta Enviada")
-                st.markdown("""**📘 Manual Rápido:**\n1. Entradas: 'Nuevo Folio'.\n2. Salidas: 'Oficios Salida'.\n3. Monitor: Verifica online.""")
-                st.markdown("### 🛠️ Solucionador")
-                p = st.selectbox("Problema:", ["No veo folios", "Error Chat"])
-                if p == "No veo folios": st.info("Revisa si el folio está asignado a tu nombre.")
-                if p == "Error Chat": st.info("Recarga la página.")
             if st.button("Salir"):
                 conn.execute("UPDATE usuarios SET online='OFFLINE' WHERE user=?",(u_id,)); conn.commit(); st.session_state.auth=False; st.rerun()
             conn.close()
 
-        # 9. ADMIN USUARIOS
+        # 10. ADMIN USUARIOS
         elif mod == "⚙️ Admin Usuarios":
             st.title("⚙️ Usuarios")
             conn=get_db_connection()
@@ -431,7 +572,7 @@ else:
                     if st.button("Guardar"): conn.execute("UPDATE usuarios SET depto=?, rol=? WHERE user=?",(na,nr,us)); conn.commit(); st.success("Ok"); st.rerun()
             st.dataframe(pd.read_sql_query("SELECT user, nombre, rol, depto FROM usuarios", conn)); conn.close()
 
-        # 10. CONSEJO
+        # 11. CONSEJO
         elif mod == "🏛️ Consejo Técnico":
             st.title("🏛️ Consejo")
             t1, t2, t3 = st.tabs(["IA", "Asistencia", "ZIP"])
