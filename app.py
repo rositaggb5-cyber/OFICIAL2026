@@ -10,6 +10,7 @@ import re
 import zipfile
 import os
 import streamlit.components.v1 as components
+import qrcode
 
 # ==========================================
 # 1. CONFIGURACIÓN Y CONEXIÓN SEGURA
@@ -18,9 +19,9 @@ API_KEY_GOOGLE = "AIzaSyAZZrX6EfJ8G7c9doA3cGuAi6LibdqrPrE"
 genai.configure(api_key=API_KEY_GOOGLE)
 model = genai.GenerativeModel('gemini-1.5-flash')
 
-# --- RUTA EXACTA DE LA BASE DE DATOS (ANTI-BORRADO) ---
+# --- RUTA EXACTA DE LA BASE DE DATOS ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, 'oficialia_v22_FINAL.db')
+DB_PATH = os.path.join(BASE_DIR, 'oficialia_v22_FINAL_PRO.db')
 
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -37,7 +38,6 @@ def init_db():
                   dependencia TEXT, asunto TEXT, nombre_ubica TEXT, fecha_ingreso TEXT, 
                   departamento TEXT, entregado_a TEXT, recibe_investiga TEXT, status TEXT, 
                   seguimiento TEXT, ubicacion_fisica TEXT, quien_firma TEXT, capturista TEXT, foto BLOB)''')
-    
     try: c.execute("ALTER TABLE correspondencia ADD COLUMN confirmado INTEGER DEFAULT 0")
     except: pass
     try: c.execute("ALTER TABLE correspondencia ADD COLUMN metodo_entrega TEXT")
@@ -57,11 +57,113 @@ def init_db():
     # 5. Citas Hernán
     c.execute("CREATE TABLE IF NOT EXISTS citas_hernan (id INTEGER PRIMARY KEY AUTOINCREMENT, solicitante TEXT, fecha TEXT, hora TEXT, asunto TEXT)")
 
-    try:
-        c.execute("INSERT OR IGNORE INTO usuarios VALUES ('ADMIN', '1234', 'ROSA GUTIERREZ', 'Administradora', 'DIRECCIÓN', '👩🏻‍💼', 'OFFLINE')")
-        conn.commit()
-    except: pass
-    
+    # 6. Buzón de Quejas (NUEVO)
+    c.execute("CREATE TABLE IF NOT EXISTS quejas (id INTEGER PRIMARY KEY AUTOINCREMENT, usuario TEXT, fecha TEXT, mensaje TEXT)")
+
+    # --- CARGA MASIVA DE USUARIOS (NUEVO) ---
+    # Lista exacta solicitada
+    users_list = [
+        ("RODOLFO.GONZALEZ", "director2026", "RODOLFO GONZÁLEZ SÁNCHEZ", "Director", "DIRECCIÓN"),
+        ("ROSA.GUTIERREZ", "admin2026", "ROSA GUADALUPE GUTIÉRREZ BOTELLO", "Administradora", "DIRECCIÓN"),
+        ("ANGEL.MARTINEZ", "12345", "MARTINEZ TORRES ANGEL ISMAEL", "Jefe de Área", "TRANSMISIONES"),
+        ("MARTHA.MORA", "12345", "MORA TORRES MARTHA PATRICIA", "Secretaria", "TRANSMISIONES"),
+        ("LORENA.GUEVARA", "12345", "GUEVARA ORTEGA LORENA ELIZABETH", "Trabajador", "TRANSMISIONES"),
+        ("JOSE.MEDINA", "12345", "MEDINA RAMOS JOSE OSCAR", "Trabajador", "TRANSMISIONES"),
+        ("ESDRAS.ZUNIGA", "12345", "ZUÑIGA HERNANDEZ ESDRAS JOSUE", "Trabajador", "TRANSMISIONES"),
+        ("MARTHA.TADEO", "12345", "TADEO GALINDO MARTHA OFELIA", "Trabajador", "TRANSMISIONES"),
+        ("VICTOR.ALVAREZ", "12345", "ALVAREZ HERNANDEZ VICTOR FERNANDO", "Trabajador", "TRANSMISIONES"),
+        ("MARTHA.JIMENEZ", "12345", "JIMENEZ LARIOS MARTHA ADRIANA", "Trabajador", "TRANSMISIONES"),
+        ("MARIA.MONTANO", "12345", "MONTAÑO GONZALEZ MARIA CRISTINA", "Trabajador", "TRANSMISIONES"),
+        ("DANIEL.LOPEZ", "12345", "LOPEZ TOLEDO DANIEL EMILIANO", "Trabajador", "TRANSMISIONES"),
+        ("GREGORIO.AYALA", "12345", "AYALA MARTÍNEZ GREGORIO", "Trabajador", "TRANSMISIONES"),
+        ("GERARDO.VILLARRUEL", "12345", "VILLARRUEL CASTELLANOS GERARDO", "Trabajador", "TRANSMISIONES"),
+        ("CLAUDIA.GILDO", "12345", "JIMENEZ GILDO CLAUDIA LETICIA", "Trabajador", "TRANSMISIONES"),
+        ("NAYELI.MARQUEZ", "12345", "MARQUEZ RENDON NAYELI GORETI", "Trabajador", "TRANSMISIONES"),
+        ("ADRIANA.GUEVARA", "12345", "GUEVARA BECERRA ADRIANA GUADALUPE", "Trabajador", "TRANSMISIONES"),
+        ("ALEJANDRO.VENEGAS", "12345", "VENEGAS HERRERA ALEJANDRO", "Trabajador", "TRANSMISIONES"),
+        ("HILDA.MONTOYA", "12345", "MONTOYA OROPEZA HILDA PATRICIA", "Trabajador", "TRANSMISIONES"),
+        ("DANIELA.ACOSTA", "12345", "ACOSTA RODRÍGUEZ DANIELA GPE.", "Trabajador", "TRANSMISIONES"),
+        ("MARIA.QUINONEZ", "12345", "QUIÑONEZ BARBA MARIA DE LOURDES", "Trabajador", "TRANSMISIONES"),
+        ("SILVIA.GARCIA", "12345", "GARCIA GONZÁLEZ SILVIA LORENA", "Trabajador", "TRANSMISIONES"),
+        ("MARIA.HERNANDEZ", "12345", "HERNANDEZ LEONOR MARIA DE LOS ANGELES", "Trabajador", "TRANSMISIONES"),
+        ("MARIA.VERA", "12345", "VERA SANCHEZ MARIA DOLORES", "Trabajador", "TRANSMISIONES"),
+        ("KARLA.ALMEIDA", "12345", "ALMEIDA PÉREZ KARLA JANETTE", "Jefe de Área", "COORDINACIÓN"),
+        ("LUZ.VALADEZ", "12345", "VALADEZ JIMENEZ LUZ ALEJANDRA", "Trabajador", "COORDINACIÓN"),
+        ("ANDRES.ARANDA", "12345", "ARANDA MENDOZA ANDRES", "Jefe de Área", "COORDINACIÓN"),
+        ("JESUS.GALINDO", "12345", "GALINDO ROSAS JESUS", "Trabajador", "COORDINACIÓN"),
+        ("MARIA.ARREGUIN", "12345", "ARREGUIN HERNANDEZ MARÍA EUGENIA", "Trabajador", "COORDINACIÓN"),
+        ("FRANCISCO.GALICIA", "12345", "GALICIA PADILLA FRANCISCO JAVIER", "Trabajador", "COORDINACIÓN"),
+        ("AZHAR.GONZALEZ", "12345", "GONZALEZ BROSS AZHAR ETHEL", "Trabajador", "COORDINACIÓN"),
+        ("RUBEN.GONZALEZ", "12345", "GONZALEZ VENEGAS RUBEN HERNAN", "Trabajador", "COORDINACIÓN"),
+        ("MARIA.GUTIERRES", "12345", "GUTIERRES CHAVEZ MARÍA ALEJANDRA", "Trabajador", "COORDINACIÓN"),
+        ("DAVID.LOPEZ", "12345", "LOPEZ GARRET DAVID HERNAN", "Trabajador", "COORDINACIÓN"),
+        ("NORMA.MARIN", "12345", "MARIN MONTES DE OCA NORMA ANGELICA", "Trabajador", "COORDINACIÓN"),
+        ("GRACIELA.NAVARRO", "12345", "NAVARRO MORENO GRACIELA", "Trabajador", "COORDINACIÓN"),
+        ("MARIA.ROJO", "12345", "ROJO CASTAÑEDA MARIA MARTINA", "Trabajador", "COORDINACIÓN"),
+        ("EDUARDO.BARAJAS", "12345", "BARAJAS ALONSO EDUARDO E.", "Trabajador", "COORDINACIÓN"),
+        ("MARIO.CORONA", "12345", "CORONA PINDTER MARIO ISAAC", "Trabajador", "COORDINACIÓN"),
+        ("RAFAEL.GARCIA", "12345", "GARCIA ROBLES RAFAEL", "Trabajador", "COORDINACIÓN"),
+        ("NATALIA.VILLA", "12345", "VILLA HERNÁNDEZ NATALIA MONSERRAT", "Trabajador", "COORDINACIÓN"),
+        ("JOSE.MUNOZ", "12345", "MUÑOZ DE LA PAZ JOSE IVAN", "Jefe de Área", "CERTIFICACIONES"),
+        ("JANETTE.ALAMILLO", "12345", "ALAMILLO ARAMBUL JANETTE BERENICE", "Secretaria", "CERTIFICACIONES"),
+        ("LAURA.VIVAR", "12345", "LAURA VIVAR", "Oficialia", "CERTIFICACIONES"),
+        ("ALEJANDRO.MENDOZA", "12345", "MENDOZA BENAVIDES ALEJANDRO DANIEL", "Trabajador", "CERTIFICACIONES"),
+        ("ALFONSO.CHAVEZ", "12345", "CHAVEZ PICHARDO ALFONSO", "Trabajador", "CERTIFICACIONES"),
+        ("ANTONIO.GALLEGOS", "12345", "GALLEGOS ESPARZA ANTONIO", "Trabajador", "CERTIFICACIONES"),
+        ("OMAR.SANTACRUZ", "12345", "SANTACRUZ QUEZADA OMAR ALEJANDRO", "Trabajador", "CERTIFICACIONES"),
+        ("ZYANYA.CHAVEZ", "12345", "CHAVEZ GONZALEZ ZYANYA AURORA", "Trabajador", "CERTIFICACIONES"),
+        ("CECILIA.REYNOSO", "12345", "REYNOSO SORIANO CECILIA GUADALUPE", "Trabajador", "CERTIFICACIONES"),
+        ("ARACELI.MURILLO", "12345", "MURILLO ESCOBEDO ARACELI", "Trabajador", "CERTIFICACIONES"),
+        ("LUCIA.VALENZUELA", "12345", "VALENZUELA RODRIGUEZ LUCIA JOSEFINA", "Trabajador", "CERTIFICACIONES"),
+        ("MARCO.GALVAN", "12345", "GALVAN RAYGOZA MARCO ANTONIO", "Trabajador", "CERTIFICACIONES"),
+        ("DAVID.TAPIA", "12345", "TAPIA GOMEZ DAVID", "Trabajador", "CERTIFICACIONES"),
+        ("GABRIELA.GONZALEZ", "12345", "GONZALEZ RODRÍGUEZ GABRIELA", "Trabajador", "CERTIFICACIONES"),
+        ("DAMARIS.OROZCO", "12345", "OROZCO RODRÍGUEZ DAMARIS LIZBETH", "Trabajador", "CERTIFICACIONES"),
+        ("MARIA.RAMOS", "12345", "RAMOS OCAMPO MARIA GUADALUPE", "Trabajador", "CERTIFICACIONES"),
+        ("HERNAN.OCHOA", "12345", "OCHOA BENITEZ HERNAN JOHE", "Jefe de Área", "VALUACIÓN"),
+        ("GORETTY.ORTIZ", "12345", "ORTIZ RUIZ GORETTY", "Secretaria", "VALUACIÓN"),
+        ("DANIEL.ARREOLA", "12345", "ARREOLA SANTAMARIA DANIEL ANDRES", "Trabajador", "VALUACIÓN"),
+        ("SANTIAGO.AVALOS", "12345", "AVALOS VILLAFUERTE SANTIAGO WALDIR", "Trabajador", "VALUACIÓN"),
+        ("VICTOR.BARAJAS", "12345", "BARAJAS HERNANDEZ VICTOR", "Trabajador", "VALUACIÓN"),
+        ("FRANCISCO.BARRIOS", "12345", "BARRIOS DE LA TORRE FCO. JAVIER", "Trabajador", "VALUACIÓN"),
+        ("ERIC.BRAMBILA", "12345", "BRAMBILA LOPEZ ERIC DE JESÚS", "Trabajador", "VALUACIÓN"),
+        ("ZAIRA.PRECIADO", "12345", "PRECIADO LUNA ZAIRA NERUSIA", "Trabajador", "VALUACIÓN"),
+        ("FRANCISCO.RAMIREZ", "12345", "RAMIREZ GUTIERREZ FCO. JAVIER", "Trabajador", "VALUACIÓN"),
+        ("JOSE.RIVERA", "12345", "RIVERA PARRILLA JOSE ARNULFO", "Trabajador", "VALUACIÓN"),
+        ("OSCAR.MONTES", "12345", "MONTES CASTELLANOS OSCAR", "Trabajador", "VALUACIÓN"),
+        ("CLAUDIA.OROZCO", "12345", "OROZCO REYES CLAUDIA GABRIELA", "Jefe de Área", "CARTOGRAFÍA"),
+        ("VICTORIA.SERRANO", "12345", "SERRANO GARCIA VICTORIA", "Secretaria", "CARTOGRAFÍA"),
+        ("ANTONIO.MANCILLA", "12345", "MANCILLA RODRIGUEZ ANTONIO", "Trabajador", "CARTOGRAFÍA"),
+        ("JOSE.RODRIGUEZ", "12345", "RODRIGUEZ HERNANDEZ JOSE LUIS", "Trabajador", "CARTOGRAFÍA"),
+        ("ALFONSO.PENA", "12345", "DE LA PEÑA LOPEZ ALFONSO HAMID", "Trabajador", "CARTOGRAFÍA"),
+        ("CARLOS.ACOSTA", "12345", "ACOSTA GARCIA CARLOS ALONSO", "Trabajador", "CARTOGRAFÍA"),
+        ("HAYDE.MARTINEZ", "12345", "DE LA O MARTINEZ HAYDE PAULINA", "Trabajador", "CARTOGRAFÍA"),
+        ("CALEB.GONZALEZ", "12345", "GONZALEZ ARIAS CALEB EMILIANO", "Trabajador", "CARTOGRAFÍA"),
+        ("ADOLFO.HERNANDEZ", "12345", "HERNANDEZ OCHOA ADOLFO SALVADOR", "Trabajador", "CARTOGRAFÍA"),
+        ("MARIBEL.IGAREDA", "12345", "IGAREDA FLORES MARIBEL", "Trabajador", "CARTOGRAFÍA"),
+        ("NORMA.PEREZ", "12345", "PEREZ HERNANDEZ NORMA ALEJANDRA", "Trabajador", "CARTOGRAFÍA"),
+        ("MONICA.REYES", "12345", "REYES MARTINEZ MONICA GUADALUPE", "Trabajador", "CARTOGRAFÍA"),
+        ("SERGIO.TORRES", "12345", "TORRES AYALA SERGIO ARTURO", "Trabajador", "CARTOGRAFÍA"),
+        ("HUGO.RODRIGUEZ", "12345", "RODRIGUEZ SANTIAGO HUGO", "Jefe de Área", "TRÁMITE Y REGISTRO"),
+        ("MIRIAM.SANCHEZ", "12345", "SANCHEZ ORTIZ MIRIAM", "Secretaria", "TRÁMITE Y REGISTRO"),
+        ("OSVALDO.CISNEROS", "12345", "OSVALDO CISNEROS CASILLAS", "Trabajador", "TRÁMITE Y REGISTRO"),
+        ("AXEL.ESCAMILLA", "12345", "ESCAMILLA RAMIREZ AXEL EMMANUEL", "Trabajador", "TRÁMITE Y REGISTRO"),
+        ("SARA.HERNANDEZ", "12345", "HERNANDEZ ONTIVEROS SARA", "Trabajador", "TRÁMITE Y REGISTRO"),
+        ("NAYERY.PANDURO", "12345", "PANDURO GUZMAN NAYERY ADRIANA", "Trabajador", "TRÁMITE Y REGISTRO"),
+        ("IRMA.VEGA", "12345", "VEGA NAVARRO IRMA DELIA", "Trabajador", "TRÁMITE Y REGISTRO"),
+        ("CARLOS.ALCANTAR", "12345", "ALCANTAR RAMIREZ CARLOS", "Trabajador", "TRÁMITE Y REGISTRO"),
+        ("MIRIAM.GUTIERREZ", "12345", "GUTIERREZ MONTERO MIRIAM AURELIA", "Trabajador", "TRÁMITE Y REGISTRO"),
+        ("JOSE.MELENDREZ", "12345", "MELENDREZ HERNANDEZ JOSE SALVADOR", "Trabajador", "TRÁMITE Y REGISTRO"),
+        ("ESPERANZA.ROBLEDO", "12345", "ROBLEDO BRIONES ESPERANZA", "Trabajador", "TRÁMITE Y REGISTRO"),
+        ("JOSE.SANTIAGO", "12345", "SANTIAGO DIAZ JOSE MANUEL", "Trabajador", "TRÁMITE Y REGISTRO"),
+        ("MIRNA.ZELAYA", "12345", "ZELAYA AVILA MIRNA JUDITH", "Trabajador", "TRÁMITE Y REGISTRO")
+    ]
+
+    for u, p, n, r, d in users_list:
+        try:
+            c.execute("INSERT OR IGNORE INTO usuarios (user, password, nombre, rol, depto, avatar, online) VALUES (?, ?, ?, ?, ?, '👤', 'OFFLINE')", (u, p, n, r, d))
+        except: pass
+
     conn.commit(); conn.close()
 
 init_db()
@@ -95,7 +197,7 @@ def mostrar_tutorial(modulo):
         else: st.info("Sistema de Gestión Catastral.")
 
 AREAS = ["DIRECCIÓN", "TRANSMISIONES", "COORDINACIÓN", "CERTIFICACIONES", "VALUACIÓN", "CARTOGRAFÍA", "TRÁMITE Y REGISTRO"]
-ROLES = ["Administradora", "Director", "Oficialía", "Jefe de Área", "Secretaria", "Operativo", "Consejero"]
+ROLES = ["Administradora", "Director", "Oficialía", "Jefe de Área", "Secretaria", "Trabajador", "Consejero"]
 
 if 'auth' not in st.session_state: st.session_state.auth = False
 if 'last_msg_count' not in st.session_state: st.session_state.last_msg_count = 0
@@ -177,15 +279,27 @@ else:
     if not st.session_state.auth:
         st.title("🔐 Acceso Administrativo")
         c1, c2 = st.columns(2)
-        u_input = c1.text_input("Usuario").upper(); p_input = c2.text_input("Contraseña", type="password")
-        if st.button("Iniciar Sesión"):
-            conn = get_db_connection()
-            user_data = conn.execute("SELECT * FROM usuarios WHERE user=? AND password=?", (u_input, p_input)).fetchone()
-            if user_data:
-                st.session_state.auth = True; st.session_state.u_dat = list(user_data)
-                conn.execute("UPDATE usuarios SET online='ONLINE' WHERE user=?", (u_input,)); conn.commit(); st.rerun()
-            else: st.error("Usuario o contraseña incorrectos.")
-            conn.close()
+        with c1:
+            u_input = st.text_input("Usuario").upper()
+            p_input = st.text_input("Contraseña", type="password")
+            if st.button("Iniciar Sesión"):
+                conn = get_db_connection()
+                user_data = conn.execute("SELECT * FROM usuarios WHERE user=? AND password=?", (u_input, p_input)).fetchone()
+                if user_data:
+                    st.session_state.auth = True; st.session_state.u_dat = list(user_data)
+                    conn.execute("UPDATE usuarios SET online='ONLINE' WHERE user=?", (u_input,)); conn.commit(); st.rerun()
+                else: st.error("Usuario o contraseña incorrectos.")
+                conn.close()
+        with c2:
+            st.info("📱 **Acceso Móvil:** Escanea para abrir")
+            url_app = "https://super-fortnight-pj4v9xwvv6qxfrrj7-8501.app.github.dev/"
+            qr = qrcode.QRCode(version=1, box_size=10, border=5)
+            qr.add_data(url_app)
+            qr.make(fit=True)
+            img = qr.make_image(fill='black', back_color='white')
+            img_byte_arr = io.BytesIO()
+            img.save(img_byte_arr, format='PNG')
+            st.image(img_byte_arr, width=200)
     else:
         u_id, u_pw, u_nom, u_rol, u_depto, u_avatar, _ = st.session_state.u_dat
         conn = get_db_connection()
@@ -200,15 +314,32 @@ else:
             conn.execute("UPDATE usuarios SET online='OFFLINE' WHERE user=?", (u_id,)); conn.commit(); st.session_state.auth = False; st.rerun()
 
         opciones = ["📊 Dashboard", "🚨 Alertas Rápidas", "📥 Nuevo Folio (IA)", "📑 Registro Maestro"]
-        if u_rol in ["Administradora", "Director", "Oficialía", "Jefe de Área", "Secretaria", "Operativo"]:
+        
+        # --- REGLA ESPECIAL HERNÁN (Citas Valuación) ---
+        if u_nom == "OCHOA BENITEZ HERNAN JOHE":
+            opciones.insert(0, "📅 Citas Valuación")
+
+        if u_rol in ["Administradora", "Director", "Oficialía", "Jefe de Área", "Secretaria", "Trabajador", "Operativo"]:
             opciones.extend(["📄 Oficios Salida", "📑 Maestro Salidas"])
         opciones.extend(["👥 Monitor de Personal", "✉️ Mensajería", "👤 Mi Perfil"])
         if u_rol in ["Administradora", "Oficialía"]: opciones.extend(["⚙️ Admin Usuarios", "🏛️ Consejo Técnico"])
         
         sel = st.sidebar.selectbox("Ir a:", opciones)
 
+        # 0. CITAS VALUACIÓN (HERNÁN)
+        if sel == "📅 Citas Valuación":
+            st.title("📅 Citas Valuación (Vista Jefe)")
+            st.subheader("Agenda de Valuaciones Asignadas")
+            df_h = pd.read_sql_query("SELECT fecha, hora, solicitante, asunto FROM citas_hernan ORDER BY fecha, hora", conn)
+            if not df_h.empty:
+                st.dataframe(df_h, use_container_width=True, hide_index=True)
+                st.success("Sincronizado con Base de Datos")
+            else:
+                st.warning("No tienes citas asignadas.")
+            conn.close()
+
         # 1. DASHBOARD
-        if sel == "📊 Dashboard":
+        elif sel == "📊 Dashboard":
             st.title("📊 Tablero de Control")
             conn = get_db_connection()
             q_d = "SELECT status, entregado_a, departamento FROM correspondencia" if u_rol in ["Administradora", "Director", "Oficialía"] else f"SELECT status, entregado_a, departamento FROM correspondencia WHERE departamento='{u_depto}'"
@@ -332,11 +463,12 @@ else:
                     p = df[df['folio_dir']==pf].iloc[0]; b = pf.split("-")[0]
                     cn = conn.execute(f"SELECT COUNT(*) FROM correspondencia WHERE folio_dir LIKE '{b}-%'").fetchone()[0]
                     abc="ABCDEFGHIJKLMNOPQRSTUVWXYZ"; nf = f"{b}-{abc[cn]}" if cn<26 else f"{b}-{cn}"
-                    conn.execute("INSERT INTO correspondencia (folio_dir,cuenta,sicamdtr,folio_ext,dependencia,asunto,nombre_ubica,fecha_ingreso,departamento,entregado_a,status,capturista,confirmado,metodo_entrega) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (nf,p['cuenta'],p['sicamdtr'],p['folio_ext'],p['dependencia'],p['asunto'],p['nombre_ubica'],str(date.today()),t_area,t_resp,"PENDIENTE",u_nom,0,p['metodo_entrega']))
+                    # Aquí faltan variables t_area y t_resp que no se definieron en el form original, uso valores de p por defecto
+                    conn.execute("INSERT INTO correspondencia (folio_dir,cuenta,sicamdtr,folio_ext,dependencia,asunto,nombre_ubica,fecha_ingreso,departamento,entregado_a,status,capturista,confirmado,metodo_entrega) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (nf,p['cuenta'],p['sicamdtr'],p['folio_ext'],p['dependencia'],p['asunto'],p['nombre_ubica'],str(date.today()),p['departamento'],p['entregado_a'],"PENDIENTE",u_nom,0,p['metodo_entrega']))
                     conn.commit(); st.success(f"Turno: {nf}"); st.rerun()
             conn.close()
 
-        # 5. OFICIOS SALIDA (ACTUALIZADO: COMPLETO)
+        # 5. OFICIOS SALIDA
         elif sel == "📄 Oficios Salida":
             mostrar_tutorial("Salidas")
             st.title("📄 Registro de Salidas")
@@ -364,7 +496,6 @@ else:
                     s16=st.text_input("16. Capturista", u_nom, disabled=True)
                 
                 if st.form_submit_button("💾 REGISTRAR SALIDA"):
-                    # Se guardan TODOS los campos igual que en una entrada
                     conn.execute("""INSERT INTO correspondencia 
                         (folio_dir, cuenta, sicamdtr, folio_ext, dependencia, asunto, nombre_ubica, fecha_ingreso, 
                          departamento, entregado_a, recibe_investiga, status, seguimiento, ubicacion_fisica, 
@@ -374,7 +505,7 @@ else:
                     conn.commit(); st.success("Salida Registrada Completamente"); st.rerun()
             conn.close()
 
-        # 6. MAESTRO SALIDAS (ACTUALIZADO: CON EDICIÓN)
+        # 6. MAESTRO SALIDAS
         elif sel == "📑 Maestro Salidas":
             mostrar_tutorial("Maestro Salidas")
             st.title("📑 Control de Salidas")
@@ -392,7 +523,6 @@ else:
                 if s:
                     r = df[df['folio_dir']==s].iloc[0]
                     with st.form("ed_sal"):
-                        # Permisos: Admin, Director, Oficialía o el mismo capturista/responsable
                         ok = u_rol in ["Administradora","Director","Oficialía"] or r['capturista']==u_nom or r['entregado_a']==u_nom
                         c1,c2 = st.columns(2)
                         with c1:
@@ -440,7 +570,7 @@ else:
                 st.dataframe(pd.read_sql_query(f"SELECT fecha, remitente, texto FROM mensajes WHERE destinatario='{u_nom}' OR remitente='{u_nom}' ORDER BY id DESC", conn), use_container_width=True)
             conn.close()
 
-        # 9. PERFIL
+        # 9. PERFIL (CON BUZÓN)
         elif sel == "👤 Mi Perfil":
             st.title(f"Hola, {u_nom}"); conn = get_db_connection()
             pen = pd.read_sql_query("SELECT folio_dir, asunto FROM correspondencia WHERE entregado_a=? AND confirmado=0", conn, params=(u_nom,))
@@ -449,7 +579,26 @@ else:
                 for i,r in pen.iterrows():
                     if st.button(f"Aceptar {r['folio_dir']}"): conn.execute("UPDATE correspondencia SET confirmado=1 WHERE folio_dir=?",(r['folio_dir'],)); conn.commit(); st.rerun()
             else: st.success("Estás al día.")
+            
             if st.button("Cambiar Clave"): conn.execute("UPDATE usuarios SET password=? WHERE user=?",(st.text_input("Nueva Clave",type="password"),u_id)); conn.commit(); st.success("Listo")
+
+            # --- BUZÓN DE QUEJAS ---
+            st.divider()
+            st.subheader("📩 Buzón de Quejas y Sugerencias")
+            with st.form("form_quejas", clear_on_submit=True):
+                msg = st.text_area("Escriba su comentario aquí...")
+                if st.form_submit_button("Enviar"):
+                    if msg:
+                        conn.execute("INSERT INTO quejas (usuario, fecha, mensaje) VALUES (?,?,?)", (u_nom, str(datetime.now()), msg))
+                        conn.commit(); st.success("Queja enviada permanentemente al sistema.")
+
+            # Mostrar quejas solo a directivos
+            if u_rol in ["Director", "Administradora"]:
+                st.divider()
+                st.subheader("📋 Registro de Quejas (Vista Admin)")
+                quejas_df = pd.read_sql_query("SELECT * FROM quejas", conn)
+                st.table(quejas_df)
+
             conn.close()
 
         # 10. ADMIN USUARIOS
