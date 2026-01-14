@@ -11,10 +11,9 @@ import zipfile
 import os
 import streamlit.components.v1 as components
 import qrcode
-import time
 
 # ==========================================
-# 1. CONFIGURACIÓN Y CONEXIÓN SEGURA
+# 1. CONFIGURACIÓN Y CONEXIÓN
 # ==========================================
 try:
     API_KEY_GOOGLE = "AIzaSyAZZrX6EfJ8G7c9doA3cGuAi6LibdqrPrE"
@@ -22,10 +21,9 @@ try:
     model = genai.GenerativeModel('gemini-1.5-flash')
 except: pass
 
-# --- RUTA EXACTA DE LA BASE DE DATOS ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# Usamos un nombre nuevo para asegurar que se creen las tablas nuevas correctamente
-DB_PATH = os.path.join(BASE_DIR, 'oficialia_v28_INTEGRADO.db')
+# ESTE ES EL NOMBRE FIJO - YA NO CREARÁ MÁS ARCHIVOS DISTINTOS
+DB_PATH = os.path.join(BASE_DIR, 'sistema_oficialia_master.db')
 
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -36,19 +34,19 @@ def init_db():
     conn = get_db_connection()
     c = conn.cursor()
     
-    # 1. Correspondencia
+    # 1. Correspondencia (Original + Campos nuevos si faltan)
     c.execute('''CREATE TABLE IF NOT EXISTS correspondencia 
                   (folio_dir TEXT PRIMARY KEY, cuenta TEXT, sicamdtr TEXT, folio_ext TEXT, 
                   dependencia TEXT, asunto TEXT, nombre_ubica TEXT, fecha_ingreso TEXT, 
                   departamento TEXT, entregado_a TEXT, recibe_investiga TEXT, status TEXT, 
                   seguimiento TEXT, ubicacion_fisica TEXT, quien_firma TEXT, capturista TEXT, foto BLOB)''')
     
-    # --- ACTUALIZACIONES PARA LO NUEVO (Sin borrar lo viejo) ---
+    # Actualizaciones de estructura (Sin borrar datos)
     try: c.execute("ALTER TABLE correspondencia ADD COLUMN confirmado INTEGER DEFAULT 0")
     except: pass
     try: c.execute("ALTER TABLE correspondencia ADD COLUMN metodo_entrega TEXT")
     except: pass
-    try: c.execute("ALTER TABLE correspondencia ADD COLUMN tipo_tramite TEXT") # Para Rezago
+    try: c.execute("ALTER TABLE correspondencia ADD COLUMN tipo_tramite TEXT")
     except: pass
 
     # 2. Usuarios
@@ -59,16 +57,16 @@ def init_db():
     try: c.execute("ALTER TABLE mensajes ADD COLUMN leido INTEGER DEFAULT 0")
     except: pass 
 
-    # 4. Consejo
+    # 4. Consejo (Recuperado)
     c.execute("CREATE TABLE IF NOT EXISTS consejo_asistencia (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre_asiste TEXT, institucion TEXT, tipo TEXT, carta_blob BLOB, fecha TEXT)")
     
     # 5. Citas Hernán
     c.execute("CREATE TABLE IF NOT EXISTS citas_hernan (id INTEGER PRIMARY KEY AUTOINCREMENT, solicitante TEXT, fecha TEXT, hora TEXT, asunto TEXT)")
 
-    # 6. Buzón de Quejas (NUEVO)
+    # 6. Buzón de Quejas
     c.execute("CREATE TABLE IF NOT EXISTS quejas (id INTEGER PRIMARY KEY AUTOINCREMENT, usuario TEXT, fecha TEXT, mensaje TEXT)")
 
-    # --- CARGA MASIVA DE USUARIOS (LISTA COMPLETA ORIGINAL) ---
+    # USUARIOS (Tu lista completa)
     users_list = [
         ("RODOLFO.GONZALEZ", "director2026", "RODOLFO GONZÁLEZ SÁNCHEZ", "Director", "DIRECCIÓN"),
         ("ROSA.GUTIERREZ", "admin2026", "ROSA GUADALUPE GUTIÉRREZ BOTELLO", "Administradora", "DIRECCIÓN"),
@@ -165,7 +163,7 @@ def init_db():
         ("JOSE.SANTIAGO", "12345", "SANTIAGO DIAZ JOSE MANUEL", "Trabajador", "TRÁMITE Y REGISTRO"),
         ("MIRNA.ZELAYA", "12345", "ZELAYA AVILA MIRNA JUDITH", "Trabajador", "TRÁMITE Y REGISTRO")
     ]
-
+    
     for u, p, n, r, d in users_list:
         try:
             c.execute("INSERT OR IGNORE INTO usuarios (user, password, nombre, rol, depto, avatar, online) VALUES (?, ?, ?, ?, ?, '👤', 'OFFLINE')", (u, p, n, r, d))
@@ -174,7 +172,7 @@ def init_db():
     conn.commit(); conn.close()
 
 init_db()
-st.set_page_config(page_title="SIGC V28 INTEGRAL", layout="wide")
+st.set_page_config(page_title="SIGC 2026", layout="wide")
 
 # ==========================================
 # 2. ESTILOS Y FUNCIONES
@@ -201,8 +199,8 @@ def extract_number(text):
 
 def mostrar_tutorial(modulo):
     with st.expander(f"❓ Ayuda: {modulo}"):
-        if modulo == "Salidas": st.info("📄 **Salidas:** Ahora puedes registrar todos los detalles del oficio (Cuenta, SICAM, Destinatario, etc).")
-        elif modulo == "Maestro Salidas": st.info("📑 **Maestro:** Puedes Ver, Editar y Borrar salidas igual que en Entradas.")
+        if modulo == "Salidas": st.info("📄 **Salidas:** Ahora puedes registrar todos los detalles del oficio.")
+        elif modulo == "Maestro Salidas": st.info("📑 **Maestro:** Puedes Ver, Editar y Borrar salidas.")
         else: st.info("Sistema de Gestión Catastral.")
 
 AREAS = ["DIRECCIÓN", "TRANSMISIONES", "COORDINACIÓN", "CERTIFICACIONES", "VALUACIÓN", "CARTOGRAFÍA", "TRÁMITE Y REGISTRO"]
@@ -218,17 +216,16 @@ if 'form_defaults' not in st.session_state: st.session_state.form_defaults = {}
 menu = st.sidebar.radio("Navegación:", ["🔍 Consulta Pública", "📅 Citas Hernán", "🔐 Sistema Interno"])
 
 # ------------------------------------------
-# MÓDULO PÚBLICO: CONSULTA (ACTUALIZADO: Busca Folio O Cuenta Rezago)
+# MÓDULO PÚBLICO: CONSULTA (Actualizado para ver REZAGO por Cuenta)
 # ------------------------------------------
 if menu == "🔍 Consulta Pública":
     st.title("🏛️ Consulta de Trámites")
-    st.markdown("Ingrese su número de folio (o cuenta si es rezago) para ver el estado.")
+    st.markdown("Ingrese su número de folio (o Cuenta si es Rezago) para ver el estado.")
     q = st.text_input("Número de Folio / Cuenta:", placeholder="Ej. 1234")
     if q:
         conn = get_db_connection()
-        # MODIFICACIÓN: Buscar por Folio O por Cuenta+Rezago
-        df = pd.read_sql_query("SELECT folio_dir, status, departamento, entregado_a, seguimiento, confirmado, metodo_entrega, tipo_tramite FROM correspondencia WHERE (folio_dir LIKE ? OR (cuenta LIKE ? AND tipo_tramite='REZAGO')) AND folio_dir NOT LIKE 'TES/DCAT/%'", conn, params=(f"%{q}%", f"%{q}%"))
-        
+        # Modificación para buscar también por Cuenta
+        df = pd.read_sql_query("SELECT folio_dir, status, departamento, entregado_a, seguimiento, confirmado, metodo_entrega, tipo_tramite FROM correspondencia WHERE (folio_dir LIKE ? OR (cuenta LIKE ? AND tipo_tramite='REZAGO')) AND folio_dir NOT LIKE 'TES/DCAT/%'", conn, params=(f"%{q}%",f"%{q}%"))
         if not df.empty:
             for i, r in df.iterrows():
                 with st.expander(f"📂 Resultado: {r['folio_dir']}", expanded=True):
@@ -245,12 +242,12 @@ if menu == "🔍 Consulta Pública":
                         else: st.info(f"ESTADO: {stat}")
                     st.write(f"**📝 Notas:** {r['seguimiento']}")
                     if r['metodo_entrega']: st.caption(f"Método de recepción: {r['metodo_entrega']}")
-                    if r['tipo_tramite'] == 'REZAGO': st.caption("✅ Trámite de Rezago Identificado")
-        else: st.warning("No se encontró ese folio o es un documento interno.")
+                    if r.get('tipo_tramite') == 'REZAGO': st.success("✅ Trámite Histórico (Rezago)")
+        else: st.warning("No se encontró información.")
         conn.close()
 
 # ------------------------------------------
-# MÓDULO PÚBLICO: CITAS HERNÁN (ORIGINAL)
+# MÓDULO PÚBLICO: CITAS HERNÁN
 # ------------------------------------------
 elif menu == "📅 Citas Hernán":
     st.title("📅 Agenda de Citas: Hernán")
@@ -304,7 +301,7 @@ else:
                 conn.close()
         with c2:
             st.info("📱 **Acceso Móvil:** Escanea para abrir")
-            # --- QR NUEVO ---
+            # QR
             try:
                 url_app = "https://super-fortnight-pj4v9xwvv6qxfrrj7-8501.app.github.dev/"
                 qr = qrcode.QRCode(version=1, box_size=10, border=5)
@@ -314,7 +311,8 @@ else:
                 img_byte_arr = io.BytesIO()
                 img.save(img_byte_arr, format='PNG')
                 st.image(img_byte_arr, width=200)
-            except: st.warning("Instala qrcode con: pip install qrcode[pil]")
+            except: st.warning("Instala qrcode[pil] en terminal")
+
     else:
         u_id, u_pw, u_nom, u_rol, u_depto, u_avatar, _ = st.session_state.u_dat
         conn = get_db_connection()
@@ -328,121 +326,93 @@ else:
         if st.sidebar.button("Cerrar Sesión"):
             conn.execute("UPDATE usuarios SET online='OFFLINE' WHERE user=?", (u_id,)); conn.commit(); st.session_state.auth = False; st.rerun()
 
-        # --- MENU ORIGINAL + NUEVOS MÓDULOS ---
-        opciones = ["📊 Dashboard", "🚨 Centro de Alertas", "📥 Nuevo Folio (IA)", "📑 Registro Maestro"]
+        opciones = ["📊 Dashboard", "🚨 Alertas Rápidas", "📥 Nuevo Folio (IA)", "📑 Registro Maestro"]
         
+        # --- REGLA ESPECIAL HERNÁN ---
         if u_nom == "OCHOA BENITEZ HERNAN JOHE":
-            opciones.insert(1, "📅 Citas Valuación")
+            opciones.insert(0, "📅 Citas Valuación")
         
-        # --- NUEVO: REZAGO ---
-        if u_depto == "TRANSMISIONES" or u_rol in ["Director", "Administradora"]:
+        # --- NUEVO: REZAGO (Solo Transmisiones o Jefes) ---
+        if u_depto == "TRANSMISIONES" or u_rol in ["Administradora", "Director"]:
             opciones.insert(2, "📚 Rezago Transmisiones")
 
         if u_rol in ["Administradora", "Director", "Oficialía", "Jefe de Área", "Secretaria", "Trabajador", "Operativo"]:
             opciones.extend(["📄 Oficios Salida", "📑 Maestro Salidas"])
-        
         opciones.extend(["👥 Monitor de Personal", "✉️ Mensajería", "👤 Mi Perfil"])
-        
-        if u_rol in ["Administradora", "Oficialía", "Director"]: 
-            opciones.extend(["⚙️ Admin Usuarios", "🏛️ Consejo Técnico"])
+        if u_rol in ["Administradora", "Oficialía", "Director"]: opciones.extend(["⚙️ Admin Usuarios", "🏛️ Consejo Técnico"])
         
         sel = st.sidebar.selectbox("Ir a:", opciones)
 
         # -----------------------------------------------------------
         # MODULO ALERTAS (NUEVO)
         # -----------------------------------------------------------
-        if sel == "🚨 Centro de Alertas":
-            st.title("🚨 Sistema de Alertas y Tiempos")
+        if sel == "🚨 Alertas Rápidas":
+            st.title("🚨 Centro de Alertas")
             conn = get_db_connection()
-            # Buscar folios vencidos o por vencer
-            df = pd.read_sql_query("SELECT folio_dir, fecha_ingreso, asunto, status FROM correspondencia WHERE status NOT LIKE '%TERMINADO%'", conn)
-            
-            st.subheader("⚠️ Semáforo de Trámites")
-            f_search = st.text_input("Buscar Folio Específico para Alerta:")
-            if f_search:
-                df = df[df['folio_dir'].str.contains(f_search, na=False)]
-
+            # Alertas originales + Semáforo de tiempo
+            st.subheader("Semáforo de Tiempos")
+            df = pd.read_sql_query("SELECT folio_dir, asunto, fecha_ingreso, status FROM correspondencia WHERE status NOT LIKE '%TERMINADO%'", conn)
             if not df.empty:
-                df['fecha_ingreso'] = pd.to_datetime(df['fecha_ingreso'])
+                df['fecha_ingreso'] = pd.to_datetime(df['fecha_ingreso'], errors='coerce')
                 now = pd.to_datetime(date.today())
-                df['dias_transcurridos'] = (now - df['fecha_ingreso']).dt.days
-                
-                for _, r in df.iterrows():
-                    dias = r['dias_transcurridos']
+                for i, r in df.iterrows():
+                    dias = (now - r['fecha_ingreso']).days if pd.notnull(r['fecha_ingreso']) else 0
                     if dias > 20:
-                        st.markdown(f"<div class='alerta-roja'>🔴 <b>{r['folio_dir']}</b> - {dias} días (URGENTE)</div>", unsafe_allow_html=True)
+                         st.markdown(f"<div class='alerta-roja'>🔴 <b>{r['folio_dir']}</b> - {dias} días (URGENTE)</div>", unsafe_allow_html=True)
                     elif dias > 10:
-                        st.markdown(f"<div class='alerta-amarilla'>🟡 <b>{r['folio_dir']}</b> - {dias} días (Atención)</div>", unsafe_allow_html=True)
-                    else:
-                        st.success(f"🟢 {r['folio_dir']} - {dias} días (En tiempo)")
-            else:
-                st.info("No hay trámites pendientes o encontrados.")
+                         st.markdown(f"<div class='alerta-amarilla'>🟡 <b>{r['folio_dir']}</b> - {dias} días (Atención)</div>", unsafe_allow_html=True)
+                    
+            st.subheader("Pendientes Generales")
+            df2 = pd.read_sql_query("SELECT folio_dir, asunto, status FROM correspondencia WHERE status LIKE '%PENDIENTE%' OR status LIKE '%FALTAN DOCUMENTOS%'", conn)
+            for i, r in df2.iterrows():
+                ico = "🔴" if "FALTA" in r['status'] else "🟡"
+                st.markdown(f"""<div class="alerta-box"><h4>{ico} {r['folio_dir']}</h4><p>{r['asunto']}</p></div>""", unsafe_allow_html=True)
             conn.close()
 
         # -----------------------------------------------------------
         # MODULO CONSEJO TÉCNICO (NUEVO)
         # -----------------------------------------------------------
         elif sel == "🏛️ Consejo Técnico":
-            st.title("🏛️ Consejo Técnico Catastral")
-            t1, t2 = st.tabs(["Generar Acta (IA)", "Lista de Asistencia"])
-            
+            st.title("Consejo Técnico"); conn=get_db_connection()
+            t1,t2=st.tabs(["Acta IA","Asistencia"])
             with t1:
-                st.subheader("Redacción Automática")
-                tema = st.text_input("Tema de la Sesión")
-                if st.button("Generar Borrador") and tema:
-                    try:
-                        res = model.generate_content(f"Redacta un acta formal de consejo técnico catastral sobre: {tema}")
-                        st.text_area("Borrador:", res.text, height=400)
-                    except: st.error("Configura API Key de Google")
-            
+                tem = st.text_input("Tema de la sesión")
+                if st.button("Generar Acta") and tem: 
+                    try: st.text_area("Borrador:", model.generate_content(f"Acta Consejo Catastral sobre {tem}").text, height=300)
+                    except: st.error("Error API")
             with t2:
-                st.subheader("Registro de Asistencia")
                 with st.form("asist"):
-                    nm = st.text_input("Nombre Consejero")
-                    inst = st.text_input("Institución")
-                    tp = st.selectbox("Tipo", ["Titular", "Suplente"])
-                    arch = st.file_uploader("Subir Nombramiento/Firma (PDF)")
-                    if st.form_submit_button("Registrar"):
-                        conn = get_db_connection()
-                        conn.execute("INSERT INTO consejo_asistencia (nombre_asiste, institucion, tipo, carta_blob, fecha) VALUES (?,?,?,?,?)",
-                                     (nm, inst, tp, arch.getvalue() if arch else None, str(date.today())))
-                        conn.commit(); st.success("Registrado")
-                        conn.close()
-                
-                if st.button("Descargar Expediente (ZIP)"):
-                    conn = get_db_connection()
-                    data = conn.execute("SELECT nombre_asiste, carta_blob FROM consejo_asistencia").fetchall()
-                    if data:
-                        b = io.BytesIO()
-                        with zipfile.ZipFile(b, "w") as z:
-                            for row in data:
-                                if row['carta_blob']: z.writestr(f"{row['nombre_asiste']}.pdf", row['carta_blob'])
-                        st.download_button("📥 Descargar ZIP", b.getvalue(), "Consejo_Docs.zip", "application/zip")
-                    conn.close()
+                    nm=st.text_input("Nombre"); tp=st.selectbox("Tipo",["Titular","Suplente"]); fl=st.file_uploader("PDF")
+                    if st.form_submit_button("Registrar"): conn.execute("INSERT INTO consejo_asistencia (nombre_asiste,tipo,carta_blob,fecha) VALUES (?,?,?,?)",(nm,tp,fl.getvalue() if fl else None,str(date.today()))); conn.commit(); st.success("Ok")
+                if st.button("Descargar ZIP"):
+                    b=io.BytesIO()
+                    with zipfile.ZipFile(b,"w") as z:
+                        for r in conn.execute("SELECT nombre_asiste, carta_blob FROM consejo_asistencia").fetchall():
+                            if r['carta_blob']: z.writestr(f"{r['nombre_asiste']}.pdf", r['carta_blob'])
+                    st.download_button("ZIP", b.getvalue(), "consejo.zip")
+            conn.close()
 
         # -----------------------------------------------------------
-        # MODULO REZAGO (NUEVO)
+        # MODULO REZAGO (NUEVO - CUENTA ES FOLIO)
         # -----------------------------------------------------------
         elif sel == "📚 Rezago Transmisiones":
             st.title("📚 Registro de Rezago")
-            st.warning("El número de CUENTA será el identificador público.")
+            st.info("La CUENTA será el identificador.")
             with st.form("rez"):
                 cta = st.text_input("Número de Cuenta")
                 asu = st.text_input("Asunto")
-                tr_users = [x['nombre'] for x in get_db_connection().execute("SELECT nombre FROM usuarios WHERE depto='TRANSMISIONES'").fetchall()]
-                resp = st.selectbox("Asignar a:", tr_users)
-                
+                resp = st.selectbox("Asignar a:", [x['nombre'] for x in get_db_connection().execute("SELECT nombre FROM usuarios WHERE depto='TRANSMISIONES'").fetchall()])
                 if st.form_submit_button("Registrar"):
                     conn = get_db_connection()
                     try:
-                        # Inserta con tipo_tramite = REZAGO
+                        # Guarda como REZAGO
                         conn.execute("INSERT INTO correspondencia (folio_dir, cuenta, asunto, departamento, entregado_a, status, fecha_ingreso, tipo_tramite) VALUES (?,?,?,?,?,?,?,?)",
                                      (f"REZ-{cta}", cta, asu, "TRANSMISIONES", resp, "EN PROCESO", str(date.today()), "REZAGO"))
-                        conn.commit(); st.success(f"Rezago guardado. Consultable por cuenta: {cta}")
-                    except: st.error("Error: Cuenta duplicada o folio existente")
+                        conn.commit(); st.success(f"Guardado. Consultar con cuenta: {cta}")
+                    except: st.error("Error al guardar")
                     conn.close()
 
-        # 0. CITAS VALUACIÓN (HERNÁN)
+        # 0. CITAS VALUACIÓN
         elif sel == "📅 Citas Valuación":
             st.title("📅 Citas Valuación (Vista Jefe)")
             st.subheader("Agenda de Valuaciones Asignadas")
@@ -509,14 +479,13 @@ else:
             if save:
                 conn = get_db_connection()
                 try:
-                    conn.execute("INSERT INTO correspondencia (folio_dir, cuenta, sicamdtr, folio_ext, dependencia, asunto, nombre_ubica, fecha_ingreso, departamento, entregado_a, recibe_investiga, status, seguimiento, ubicacion_fisica, quien_firma, capturista, foto, confirmado, metodo_entrega, tipo_tramite) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?)", 
-                                 (f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13,f14,f15,f16,cam.getvalue() if cam else None, f_met, "NORMAL"))
+                    conn.execute("INSERT INTO correspondencia VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?)", (f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13,f14,f15,f16,cam.getvalue() if cam else None, f_met, "NORMAL"))
                     conn.commit(); st.session_state.form_defaults={'area':f9,'asig':f10,'ubi':f7,'fisica':f14,'metodo':f_met}
                     st.session_state.ia={"f":"","c":"","s":"","e":"","d":"","a":""}; st.success("Guardado"); st.rerun()
                 except Exception as e: st.error(f"Error: {e}")
                 conn.close()
 
-        # 4. MAESTRO ENTRADAS
+        # 4. MAESTRO ENTRADAS (CON BOTÓN DE RESPALDO)
         elif sel == "📑 Registro Maestro":
             st.title("📑 Maestro Correspondencia")
             conn = get_db_connection(); users = [r['nombre'] for r in conn.execute("SELECT nombre FROM usuarios").fetchall()]
@@ -570,6 +539,11 @@ else:
                     abc="ABCDEFGHIJKLMNOPQRSTUVWXYZ"; nf = f"{b}-{abc[cn]}" if cn<26 else f"{b}-{cn}"
                     conn.execute("INSERT INTO correspondencia (folio_dir,cuenta,sicamdtr,folio_ext,dependencia,asunto,nombre_ubica,fecha_ingreso,departamento,entregado_a,status,capturista,confirmado,metodo_entrega,tipo_tramite) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (nf,p['cuenta'],p['sicamdtr'],p['folio_ext'],p['dependencia'],p['asunto'],p['nombre_ubica'],str(date.today()),p['departamento'],p['entregado_a'],"PENDIENTE",u_nom,0,p['metodo_entrega'],"TURNO"))
                     conn.commit(); st.success(f"Turno: {nf}"); st.rerun()
+            
+            # --- BOTÓN RESPALDO (SOLUCIÓN SEGURA) ---
+            st.divider()
+            with open(DB_PATH, "rb") as fp:
+                st.download_button("💾 DESCARGAR COPIA DE SEGURIDAD (DB)", fp, "respaldo_seguro.db", "application/octet-stream")
             conn.close()
 
         # 5. OFICIOS SALIDA
