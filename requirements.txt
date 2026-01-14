@@ -1,4 +1,6 @@
 streamlit
-st-gsheets-connection
 pandas
+plotly
 google-generativeai
+qrcode[pil]
+pillow
